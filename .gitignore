@@ -1,0 +1,7 @@
+scripts/start.sh
+memory-bank/state/*
+.env
+.venv/
+__pycache__/
+CLAUDE.md
+profiles-mcp.log
