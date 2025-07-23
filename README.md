@@ -101,4 +101,5 @@ This repository contains the backend implementation that powers the RAG function
 
 ## License
 
-Internal use only - Not for distribution outside the organization.
+  This project is licensed under the Elastic License v2.0 - see the
+  [LICENSE](LICENSE) file for details.
