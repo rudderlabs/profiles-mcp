@@ -494,6 +494,7 @@ model_folders:
 
 entities:
   - name: user
+    id_stitcher: models/user_id_stitcher  # ID stitcher model reference - REQUIRED
     id_column_name: user_main_id
     id_types:
       - email
@@ -519,6 +520,7 @@ id_types:
 
 ### 2. Entities Configuration
 - Define each entity you want to track (e.g., user, account)
+- **MANDATORY**: Specify the ID stitcher model for each entity
 - Specify ID types for each entity
 - Optional: Configure feature views for different ID types
 
@@ -532,6 +534,7 @@ Add under entities to create views with specific ID types as primary keys:
 ```yaml
 entities:
   - name: user
+    id_stitcher: models/user_id_stitcher  # REQUIRED
     id_types:
       - email
       - user_id
@@ -553,6 +556,7 @@ entities:
 ```yaml
 entities:
   - name: user
+    id_stitcher: models/user_id_stitcher  # REQUIRED
     id_column_name: user_main_id
     id_types:
       - email
