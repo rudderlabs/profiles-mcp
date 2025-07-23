@@ -11,7 +11,7 @@ def get_app_config_info(app):
     """Get the configuration directory and filename based on the app and OS
 
     Args:
-        app (str): The app to get config for ('cursor', 'claude-desktop', or 'claude-code')
+        app (str): The app to get config for ('cursor', 'claude-desktop', 'claude-code' or 'cline')
 
     Returns:
         tuple: (config_dir, config_file_name)
@@ -49,6 +49,15 @@ def get_app_config_info(app):
             # TODO: Find the correct path for Windows
             config_dir = Path(os.getenv("APPDATA")) / "Claude"
 
+    elif app == 'cline':
+        config_file_name = "cline_mcp_settings.json"
+        if system == "Darwin" or system == "Linux":
+            config_dir = home / "Library" / "Application Support" / "Code" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings"
+        elif system == "Windows":
+            # TODO: Find the correct path for Windows
+            userprofile = os.getenv("USERPROFILE")
+            config_dir = Path(userprofile) / ".cursor" if userprofile else None
+
     return config_dir, config_file_name
 
 
@@ -56,7 +65,7 @@ def update_config(app, start_script):
     """Update the MCP configuration file for the specified app
 
     Args:
-        app (str): The app to update ('cursor', 'claude-desktop', or 'claude-code')
+        app (str): The app to update ('cursor', 'claude-desktop', 'claude-code' or 'cline')
         start_script (str): Path to the start script
 
     Returns:
@@ -101,7 +110,7 @@ def update_mcp_config(target="all"):
     """Update MCP configuration for specified targets
 
     Args:
-        target (str): Which config to update - "cursor", "claude-desktop", "claude-code", or "all"
+        target (str): Which config to update - "cursor", "claude-desktop", "claude-code", "cline" or "all"
     """
     current_dir = Path(__file__).parent.parent
     start_script = current_dir / "scripts" / "start.sh"
@@ -121,6 +130,10 @@ def update_mcp_config(target="all"):
         claude_code_success = update_config('claude-code', start_script)
         success = success and claude_code_success
 
+    if target in ["cline", "all"]:
+        cline_success = update_config('cline', start_script)
+        success = success and cline_success
+
     return success
 
 
@@ -128,15 +141,16 @@ def get_target():
     """Prompt user to select which configuration to update
 
     Returns:
-        str: Target configuration - 'cursor', 'claude-desktop', 'claude-code', or 'all'
+        str: Target configuration - 'cursor', 'claude-desktop', 'claude-code', 'cline' or 'all'
     """
 
     print("Which configuration would you like to update?")
     print("1. Cursor")
     print("2. Claude Desktop")
     print("3. Claude Code")
-    print("4. All (default)")
-    choice = input("Enter your choice (1-4) [4]: ").strip()
+    print("4. Cline")
+    print("5. All (default)")
+    choice = input("Enter your choice (1-5) [5]: ").strip()
 
     if choice == "1":
         return "cursor"
@@ -144,6 +158,8 @@ def get_target():
         return "claude-desktop"
     elif choice == "3":
         return "claude-code"
+    elif choice == "4":
+        return "cline"
     else:
         return "all"
 
