@@ -54,9 +54,7 @@ def get_app_config_info(app):
         if system == "Darwin" or system == "Linux":
             config_dir = home / "Library" / "Application Support" / "Code" / "User" / "globalStorage" / "saoudrizwan.claude-dev" / "settings"
         elif system == "Windows":
-            # TODO: Find the correct path for Windows
-            userprofile = os.getenv("USERPROFILE")
-            config_dir = Path(userprofile) / ".cursor" if userprofile else None
+            raise NotImplementedError("✗ Windows is not supported for Cline.")
 
     return config_dir, config_file_name
 
