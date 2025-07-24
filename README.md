@@ -8,7 +8,6 @@ This component provides a Model Context Protocol (MCP) server for building profi
 - Requires Python 3.10.x to be installed
 - Access to Snowflake with appropriate permissions (read access to input tables for profiles, and write access to a schema where profiles can generate outputs)
 - Cursor IDE v0.47.x or higher installed for building profiles projects. A free version works in theory but the experience is significantly better with a paid version
-- Claude Desktop v0.9.4 or higher installed for optimal performance
 - A Rudderstack [Personal Access Token](https://www.rudderstack.com/docs/dashboard-guides/personal-access-token/#generate-personal-access-token)
 
 ## Quick Start
