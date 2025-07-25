@@ -235,6 +235,13 @@ your-profiles-project/
 
 ## 🚨 **CRITICAL: Common Mistakes to Avoid**
 
+### **Create Only What Customer Specifically Requests** 🎯
+- **IF** customer asks for "id-stitcher only", create **ONLY** id-stitcher model
+- **IF** customer asks for "features only", create **ONLY** entity variables  
+- **IF** customer asks for "propensity model", **THEN** include id-stitcher + features + propensity model
+- **NEVER** assume customer wants propensity models unless explicitly requested
+- **NEVER** add `profiles-mlcorelib` dependency unless propensity models are specifically requested
+
 ### **NEVER Make Up Names - Always Discover Real Data** 🚫
 - **NEVER** use generic names like "my_database.my_schema.my_table"
 - **NEVER** use generic names like "my_snowflake_connection"
@@ -330,7 +337,10 @@ source .venv/bin/activate
 
 # Install required packages
 pip install profiles-rudderstack
-pip install profiles-mlcorelib>=0.8.1
+
+# IMPORTANT: Install profiles-mlcorelib ONLY if using propensity models
+# For id-stitcher and feature engineering only, mlcorelib is NOT required
+pip install profiles-mlcorelib>=0.8.1  # Only for propensity models
 ```
 
 ### 2. Initialize Profiles Builder CLI
@@ -761,6 +771,12 @@ Profiles helps you create unified customer views by:
 1. Stitching multiple identifiers into a single identity
 2. Generating customer features from various data sources
 
+**IMPORTANT - Create Only What Customer Requests:**
+- **ID-Stitcher Only**: If customer asks for "id-stitcher only", create ONLY the id_stitcher model configuration
+- **Features Only**: If customer asks for "entity variables" or "features only", create ONLY var_groups with entity_vars
+- **Complete Profiles**: If customer asks for "customer profiles" or "unified views", create both id_stitcher and entity_vars
+- **Propensity Models**: Only create propensity models when explicitly requested (requires id_stitcher + entity_vars + propensity model)
+
 ## Prerequisites
 Before configuring models.yaml:
 1. Use about_profiles(topic="project") to understand the project structure and entities.
@@ -1069,15 +1085,17 @@ Using Profile's Propensity Scores Data App, you can predict the likelihood of us
 
 ## Prerequisites
 - An active RudderStack Profiles project (v0.18.0 or above) using Snowflake, BigQuery, or Redshift
-- Install the profiles-mlcorelib library: `pip install profiles-mlcorelib`
+- **ONLY FOR PROPENSITY MODELS**: Install the profiles-mlcorelib library: `pip install profiles-mlcorelib`
 - Python requirements:
   - Redshift/BigQuery: Python 3.9.0 to 3.11.10
   - Snowflake: Python ≥ 3.9.0 and < 3.11.0
-- Update pb_project.yaml to include:
+- **ONLY FOR PROPENSITY MODELS**: Update pb_project.yaml to include:
 ```yaml
 python_requirements:
-  - profiles_mlcorelib>=0.8.1
+  - profiles_mlcorelib>=0.8.1  # Only required for propensity models
 ```
+
+**IMPORTANT**: `profiles-mlcorelib` is **NOT required** for standard profiles projects that only use id-stitcher and entity variables. Only add this dependency when explicitly creating propensity models.
 
 ## Project Setup Steps
 

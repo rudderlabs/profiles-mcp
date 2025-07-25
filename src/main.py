@@ -489,6 +489,10 @@ def setup_new_profiles_project(ctx: Context, project_path: str) -> dict:
     3. Creates a Python virtual environment (.venv) in the project directory.
     4. Installs the profiles-rudderstack package in the virtual environment.
     5. Installs the profiles-mlcorelib package in the virtual environment.
+    
+    **IMPORTANT NOTE**: This tool installs profiles-mlcorelib by default for compatibility.
+    However, profiles-mlcorelib is **ONLY required for propensity models**.
+    For id-stitcher and entity variables only, this dependency is not needed.
 
     **Smart Skipping**: The tool intelligently skips steps that have already been completed, such as:
     - Existing virtual environment that's working
@@ -595,8 +599,15 @@ def profiles_workflow_guide(ctx: Context,
 
     CRITICAL: This should be the FIRST tool called for any profiles-related task.
 
+    **IMPORTANT - Create Only What Customer Requests:**
+    - If customer asks for "id-stitcher only", create ONLY id-stitcher model
+    - If customer asks for "features only", create ONLY entity variables
+    - If customer asks for "propensity model", then include id-stitcher + features + propensity model
+    - NEVER assume customer wants propensity models unless explicitly requested
+    - NEVER add profiles-mlcorelib dependency unless propensity models are specifically requested
+
     Args:
-        user_goal: What you want to accomplish (e.g., "build customer profiles", "create features")
+        user_goal: What you want to accomplish (e.g., "build customer profiles", "create id-stitcher only", "create features", "create propensity model")
         current_action: What you're about to do or current step:
                        - "start" (just beginning)
                        - "knowledge_gathering" (learning about profiles concepts)
