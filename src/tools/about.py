@@ -1,6 +1,131 @@
+import subprocess
+import re
+from logger import setup_logger
+
+logger = setup_logger(__name__)
+
 class About:
     def __init__(self):
         pass
+
+    def _check_pb_version(self) -> dict:
+        """
+        Check the current pb version and determine if an upgrade is recommended.
+        
+        Returns:
+            dict: Contains version info and upgrade recommendations
+        """
+        version_info = {
+            "current_version": None,
+            "is_outdated": False,
+            "upgrade_needed": False,
+            "error_message": None,
+            "schema_version": None
+        }
+        
+        def _extract_versions(version_string):
+            pb_match = re.search(r'Current version of pb:\s*([^\n\r]+)', version_string)
+            pb_version = pb_match.group(1).strip() if pb_match else None
+            
+            schema_match = re.search(r'Native schema version:\s*(\d+)', version_string)
+            schema_version = schema_match.group(1) if schema_match else None
+            return pb_version, int(schema_version)
+
+        try:
+            result = subprocess.run(['pb', 'version'], capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+              version_output = result.stdout.strip()
+              pb_version, schema_version = _extract_versions(version_output)
+
+              if pb_version:
+                  version_info["current_version"] = pb_version
+                  version_info["schema_version"] = schema_version
+                  default_schema_version = 90
+                  
+                  if schema_version < default_schema_version:
+                      version_info["is_outdated"] = True
+                      version_info["upgrade_needed"] = True
+              else:
+                  logger.warning(f"Could not parse version from pb output: {version_output}")
+            else:
+                version_info["error_message"] = f"pb version command failed: {result.stderr}"
+                logger.warning(f"pb version command failed: {result.stderr}")
+                
+        except subprocess.TimeoutExpired:
+            version_info["error_message"] = "pb version command timed out"
+            logger.warning("pb version command timed out")
+        except FileNotFoundError:
+            version_info["error_message"] = "pb command not found - profiles-rudderstack may not be installed"
+            version_info["upgrade_needed"] = True
+            logger.warning("pb command not found")
+        except Exception as e:
+            version_info["error_message"] = f"Error checking pb version: {str(e)}"
+            logger.warning(f"Error checking pb version: {e}")
+            
+        return version_info
+
+    def _generate_upgrade_suggestions(self, version_info: dict) -> str:
+        """Generate upgrade suggestions based on version info."""
+        suggestions = []
+
+        if version_info["upgrade_needed"] or version_info["is_outdated"]:
+            suggestions.append("🚨 **UPGRADE RECOMMENDATION DETECTED**")
+            
+            if version_info["current_version"]:
+                suggestions.append(f"""
+                    **Current pb version**: {version_info['current_version']}
+                    **Issue**: Your profiles-rudderstack version appears to be outdated.
+                """)
+            elif version_info["error_message"] and "not found" in version_info["error_message"]:
+                suggestions.append("""
+                    **Issue**: profiles-rudderstack doesn't appear to be installed or accessible.
+                    **Solution**: Install profiles-rudderstack using the setup tool.
+                """)
+            else:
+                suggestions.append("""
+                    **Issue**: Could not determine pb version, but upgrade may be needed.
+                    **Solution**: Upgrade profiles-rudderstack using the setup tool.
+                """)
+            
+            suggestions.append("""
+                    **⚠️ CRITICAL: Schema Version Mismatch Prevention**
+                    - When using older pb versions with newer schema versions (e.g., schema_version: 90)
+                    - pb validate access may fail and attempt to downgrade YAML files
+                    - This downgrades schema_version from 90 to older versions (e.g., 85)
+                    - **SOLUTION**: Upgrade profiles-rudderstack instead of downgrading schemas
+                              
+                    **✅ RECOMMENDED ACTION:**
+                    1. **Use the setup tool to upgrade profiles-rudderstack:**
+                    ```
+                    setup_new_profiles_project(project_path='/path/to/your/project')
+                    ```
+                    This will:
+                    - Install the latest profiles-rudderstack version
+                    - Install the latest profiles-mlcorelib
+                    - Set up proper Python environment
+                    
+                    2. **Alternative manual upgrade:**
+                    ```
+                    pip install --upgrade profiles-rudderstack
+                    pip install --upgrade profiles-mlcorelib
+                    ```
+                              
+                    3. **After upgrade, verify:**
+                    ```
+                    pb version
+                    pb validate access
+                    ```
+                              
+                    **🎯 BENEFITS OF UPGRADING:**
+                    - ✅ Support for latest schema versions (90+)
+                    - ✅ Latest features and bug fixes
+                    - ✅ Improved stability and performance
+                    - ✅ Better error messages and debugging
+                    - ✅ No schema downgrade issues
+                """)
+            
+        return "\n".join(suggestions)
 
     def get_about_info(self, topic: str) -> str:
         """
@@ -46,8 +171,12 @@ class About:
         return topic_mapping[topic]()
 
     def about_profiles(self) -> str:
-        docs = """
+        version_info = self._check_pb_version()
+        upgrade_suggestions = self._generate_upgrade_suggestions(version_info)
+        docs = f"""
 # RudderStack Profiles Quick Start Guide
+
+{upgrade_suggestions}
 
 RudderStack Profiles is a customer data unification platform that runs natively in your Snowflake warehouse. It helps you:
 - Create unified customer profiles by automatically stitching identifiers
@@ -310,8 +439,13 @@ pb run --begin_time '2024-11-01T00:00:00Z'
         return docs
 
     def about_pb_cli(self) -> str:
-        docs = """
+        version_info = self._check_pb_version()
+        upgrade_suggestions = self._generate_upgrade_suggestions(version_info)
+        
+        docs = f"""
 # Profile Builder CLI Commands
+
+{upgrade_suggestions}
 
 The Profile Builder (pb) CLI supports various commands to help you manage your customer profiles project.
 
@@ -427,6 +561,7 @@ Migrates projects to newer schema versions:
 ```
 pb migrate auto --inplace
 ```
+**⚠️ IMPORTANT**: If you get schema version errors, FIRST try upgrading profiles-rudderstack using `setup_new_profiles_project()`.
 
 ### cleanup
 Removes old materials:
@@ -463,7 +598,13 @@ Most commands accept the following parameters:
         return docs
 
     def about_pb_project(self) -> str:
-        docs = """
+        version_info = self._check_pb_version()
+        if version_info["schema_version"]:
+            schema_version_text = f"schema_version: {version_info['schema_version']} # Current recommended version for your pb installation"
+        else:
+            schema_version_text = "schema_version: 90 # Sample version number. Use `pb version` cli command to get the current version."
+            
+        docs = f"""
 # pb_project.yaml Configuration Guide
 
 The `pb_project.yaml` file is your project's main configuration file that defines entities, ID types, and project settings.
@@ -487,7 +628,7 @@ connection: some_connection_i_found
 ## Minimal Configuration Example
 ```yaml
 name: my_customer_profiles
-schema_version: 88 # Sample version number. Will get updated on each new release. Use `pb version` cli command to get the current version.
+{schema_version_text}
 connection: user_chosen_connection_name  # User must specify this
 model_folders:
   - models
