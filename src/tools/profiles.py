@@ -337,12 +337,18 @@ class ProfilesTools:
     def setup_new_profiles_project(self, project_path: str) -> dict:
         """
         Sets up a new profiles project in the specified directory using pip and venv.
+        
+        **IMPORTANT**: This method installs profiles-mlcorelib by default for compatibility.
+        However, profiles-mlcorelib is **ONLY required for propensity models**.
+        For id-stitcher and entity variables only, this dependency is not needed.
+        
         Steps:
         1. Ensure the project directory exists.
         2. Verify Python 3.10 is installed.
         3. Create a Python virtual environment.
         4. Install the profiles-rudderstack package using pip.
-        5. Return a status dict with messages and errors.
+        5. Install profiles-mlcorelib (note: only needed for propensity models).
+        6. Return a status dict with messages and errors.
         """
         messages = []
         errors = []
@@ -566,8 +572,15 @@ For more information, refer to the RudderStack Profiles documentation.
 
         CRITICAL: This should be the FIRST tool called for any profiles-related task.
 
+        **IMPORTANT - Create Only What Customer Requests:**
+        - If customer asks for "id-stitcher only", create ONLY id-stitcher model
+        - If customer asks for "features only", create ONLY entity variables
+        - If customer asks for "propensity model", then include id-stitcher + features + propensity model
+        - NEVER assume customer wants propensity models unless explicitly requested
+        - NEVER add profiles-mlcorelib dependency unless propensity models are specifically requested
+
         Args:
-            user_goal: What you want to accomplish (e.g., "build customer profiles", "create features")
+            user_goal: What you want to accomplish (e.g., "build customer profiles", "create id-stitcher only", "create features", "create propensity model")
             current_action: What you're about to do or current step:
                            - "start" (just beginning)
                            - "knowledge_gathering" (learning about profiles concepts)
@@ -917,6 +930,8 @@ For more information, refer to the RudderStack Profiles documentation.
         """Get base critical warnings that apply to all workflow actions."""
         return [
             f"🚨 CRITICAL: Current year is {current_year}, NOT 2024!",
+            "🚨 CREATE ONLY WHAT CUSTOMER REQUESTS: If they ask for 'id-stitcher only', do NOT create entity-vars or propensity models",
+            "🚨 MLCORELIB DEPENDENCY: Only add profiles-mlcorelib if customer specifically requests propensity models",
             "🚨 MANDATORY: Call about_profiles(topic='inputs'), about_profiles(topic='models'), about_profiles(topic='macros') BEFORE creating any YAML",
             "🚨 NEVER add WHERE clauses with dates in YAML to filter old data from all input tabels - use --begin_time flag. This is different from where clause in entity-vars, which is acceptable while using timestamp macros",
             "🚨 NEVER assume column names exist - always use describe_table() first",
