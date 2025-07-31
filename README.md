@@ -40,7 +40,7 @@ Once configured, you can use natural language to build a profiles project throug
 - build a rudderstack profiles project to find revenue metrics for each user in snowflake under db RUDDERSTACK_TEST_DB and schema predictions_dev_project
 ```
 
-While the chat experience will work with most LLMs, we recommend using claude class of models (ex: sonnet-3.7, sonnet-4)
+While the chat experience will work with most LLMs, we recommend using claude 4.0 class of models (ex: sonnet-4)
 
 ## Debug:
 
