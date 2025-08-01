@@ -702,6 +702,78 @@ def validate_propensity_model_config(ctx: Context, project_path: str, model_name
         snowflake_client=app_ctx.snowflake
     )
 
+@mcp.tool()
+@track
+def suggest_optimal_pilot_dates(ctx: Context, input_tables: list[str], target_duration_days: int = 7) -> dict:
+    """
+    Intelligently suggests optimal begin_time and end_time for pilot/dry runs to achieve fast execution.
+    
+    This tool replaces arbitrary date selection with data-driven analysis to find the minimum 
+    date range required for a successful and fast profiles run. It analyzes actual data patterns
+    in your input tables to recommend optimal test periods.
+
+    **IMPORTANT**: This tool requires an active Snowflake connection. Call initialize_snowflake_connection() first.
+
+    **When to Use:**
+    - Before running pilot tests with 'pb run --begin_time'
+    - When you want to minimize test run duration
+    - To find periods with sufficient data density for meaningful tests
+    - When transitioning from development to production runs
+
+    **Heuristics Applied:**
+    1. **Data Freshness Analysis**: Prioritizes recent data when available
+    2. **Data Density Assessment**: Identifies periods with sufficient data volume
+    3. **Processing Time Optimization**: Suggests shorter periods for faster runs
+    4. **Multiple Options**: Provides conservative, recommended, and extended alternatives
+
+    **Integration with Profiles Workflow:**
+    Use this tool's output directly with pb commands:
+    ```bash
+    # Use the recommended dates from this tool
+    pb run --begin_time 'YYYY-MM-DDTHH:MM:SSZ' --end_time 'YYYY-MM-DDTHH:MM:SSZ'
+    ```
+
+    Args:
+        ctx: The MCP context
+        input_tables: List of fully qualified table names (e.g., ["DB.SCHEMA.TABLE1", "DB.SCHEMA.TABLE2"])
+                     Use output from input_table_suggestions() or user-confirmed table names
+        target_duration_days: Desired test duration in days (default: 7 for weekly patterns)
+                             - 1-3 days: Ultra-fast testing
+                             - 7 days: Recommended for most cases  
+                             - 14+ days: Comprehensive testing
+
+    Returns:
+        dict: Comprehensive analysis with suggested date ranges:
+            - recommended: Primary recommendation with begin_time and end_time
+            - alternatives: List of alternative options (conservative, extended)
+            - analysis: Detailed analysis of data patterns and reasoning
+            - warnings: Any issues found during analysis
+            - success: Boolean indicating if analysis succeeded
+
+    **Example Usage:**
+    ```python
+    # After table discovery
+    tables = ["ANALYTICS.PROD.EVENTS", "ANALYTICS.PROD.USERS"]
+    result = suggest_optimal_pilot_dates(tables, target_duration_days=7)
+    
+    if result["success"]:
+        recommended = result["recommended"]
+        print(f"Use: pb run --begin_time '{recommended['begin_time']}' --end_time '{recommended['end_time']}'")
+        print(f"Rationale: {recommended['rationale']}")
+    ```
+
+    **Best Practices:**
+    1. Run this tool after confirming your input tables with input_table_suggestions()
+    2. Review the rationale and confidence level before using suggested dates
+    3. Consider alternatives based on your testing needs (speed vs comprehensiveness)
+    4. Re-run analysis if your data patterns change significantly
+    """
+    app_ctx = get_app_context(ctx)
+    return app_ctx.snowflake.suggest_optimal_pilot_dates(
+        input_tables=input_tables,
+        target_duration_days=target_duration_days
+    )
+
 
 if __name__ == "__main__":
     try:
