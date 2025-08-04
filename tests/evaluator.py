@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MCP Tool Evaluation Framework using direct function imports
+MCP Tool Evaluation Framework with interactive conversation support
 """
 
 import os
@@ -12,7 +12,7 @@ import argparse
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Any, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -74,6 +74,16 @@ class MockContext:
 
 
 @dataclass
+class ConversationTurn:
+    """Single turn in a conversation"""
+    role: str  # "user", "assistant", or "tool"
+    content: str
+    tool_calls: List[Dict] = field(default_factory=list)
+    tool_results: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
 class EvalResult:
     """Evaluation result data structure"""
     iteration: int
@@ -87,11 +97,14 @@ class EvalResult:
     tool_results: Dict[str, Any]
     latency_ms: float
     token_count: int
+    conversation_history: List[ConversationTurn] = field(default_factory=list)
+    user_interventions: int = 0
+    ended_by: str = ""  # "completion", "user_end", "needs_input", "error"
     error: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
-        return {
+        result = {
             "iteration": self.iteration,
             "timestamp": self.timestamp,
             "model": self.model,
@@ -105,6 +118,23 @@ class EvalResult:
             "token_count": self.token_count,
             "error": self.error
         }
+        
+        # Add conversation details if interactive mode was used
+        if self.conversation_history:
+            result["conversation_turns"] = len(self.conversation_history)
+            result["user_interventions"] = self.user_interventions
+            result["ended_by"] = self.ended_by
+            # Optionally include full history (can be large)
+            result["conversation_history"] = [
+                {
+                    "role": turn.role,
+                    "content": turn.content[:500] if len(turn.content) > 500 else turn.content,
+                    "has_tools": len(turn.tool_calls) > 0
+                }
+                for turn in self.conversation_history
+            ]
+        
+        return result
 
 
 # =======================
@@ -219,70 +249,193 @@ class MCPEvaluator:
             logger.error(f"Error executing {tool_name}: {e}")
             return f"Error: {str(e)}"
     
-    def evaluate_prompt(self, prompt: str, messages: Optional[List[Dict]] = None) -> Dict[str, Any]:
-        """Evaluate a single prompt and capture interaction trace"""
-        start_time = time.time()
-        trace = {
-            "agent_reasoning": "",
-            "tools_attempted": [],
-            "tool_sequence": [],
-            "tool_params": {},
-            "tool_results": {},
-            "final_output": "",
-            "token_count": 0,
-            "error": None
-        }
+    def evaluate_prompt(self, prompt: str, messages: Optional[List[Dict]] = None, interactive: bool = False) -> Dict[str, Any]:
+        """Evaluate a prompt with optional interactive conversation loop"""
+        total_latency = 0
+        total_tokens = 0
+        all_tools_called = []
+        all_tool_params = {}
+        all_tool_results = {}
+        conversation_history = []
+        user_interventions = 0
+        ended_by = "completion"
+        final_reasoning = ""
+        
+        # Initialize messages if not provided
+        if messages is None:
+            messages = [{"role": "user", "content": prompt}]
+            conversation_history.append(ConversationTurn(role="user", content=prompt))
         
         try:
-            if messages is None:
-                messages = [{"role": "user", "content": prompt}]
-            
-            message = self.claude.messages.create(
-                model=SONNET_MODEL,
-                max_tokens=4000,
-                system=self.system_prompt,
-                messages=messages,
-                tools=self.tools
-            )
-            
-            # Process response
-            full_response = []
-            for content in message.content:
-                if hasattr(content, 'type'):
-                    if content.type == 'text':
-                        trace["agent_reasoning"] = content.text
-                        full_response.append(content.text)
-                    elif content.type == 'tool_use':
-                        tool_name = content.name
-                        tool_params = content.input
-                        
-                        trace["tools_attempted"].append(tool_name)
-                        trace["tool_sequence"].append({
-                            "tool": tool_name,
-                            "timestamp": time.time() - start_time
-                        })
-                        trace["tool_params"][tool_name] = tool_params
-                        
-                        # Execute the tool
-                        logger.info(f"   🔧 Executing {tool_name}...")
-                        result = self.execute_tool(tool_name, tool_params)
-                        trace["tool_results"][tool_name] = str(result)[:1000]
-                        
-                        full_response.append(f"\n[Tool: {tool_name}]\n{result}")
-            
-            trace["final_output"] = "\n".join(full_response)
-            if hasattr(message, 'usage'):
-                trace["token_count"] = (
-                    getattr(message.usage, 'total_tokens', 0) or 
-                    getattr(message.usage, 'input_tokens', 0) + getattr(message.usage, 'output_tokens', 0)
+            while True:
+                # Call Claude
+                iter_start = time.time()
+                message = self.claude.messages.create(
+                    model=SONNET_MODEL,
+                    max_tokens=4000,
+                    system=self.system_prompt,
+                    messages=messages,
+                    tools=self.tools
                 )
-            
+                iter_latency = (time.time() - iter_start) * 1000
+                total_latency += iter_latency
+                
+                # Track tokens
+                if hasattr(message, 'usage'):
+                    total_tokens += (
+                        getattr(message.usage, 'total_tokens', 0) or 
+                        getattr(message.usage, 'input_tokens', 0) + getattr(message.usage, 'output_tokens', 0)
+                    )
+                
+                # Process response
+                text_response = ""
+                tool_calls = []
+                tool_results = {}
+                
+                for content in message.content:
+                    if hasattr(content, 'type'):
+                        if content.type == 'text':
+                            text_response = content.text
+                            final_reasoning = content.text  # Keep updating with latest
+                        elif content.type == 'tool_use':
+                            tool_call = {
+                                "id": content.id,
+                                "name": content.name,
+                                "input": content.input
+                            }
+                            tool_calls.append(tool_call)
+                            
+                            # Execute the tool
+                            logger.info(f"   🔧 Executing {content.name}...")
+                            result = self.execute_tool(content.name, content.input)
+                            tool_results[content.id] = result
+                            
+                            # Track for summary
+                            all_tools_called.append(content.name)
+                            all_tool_params[content.name] = content.input
+                            all_tool_results[content.name] = str(result)[:1000]
+                
+                # Add assistant turn to history
+                conversation_history.append(ConversationTurn(
+                    role="assistant",
+                    content=text_response,
+                    tool_calls=tool_calls,
+                    tool_results=tool_results
+                ))
+                
+                # If there were tool calls, add assistant message then tool results
+                if tool_calls:
+                    # First append the assistant message with tool calls
+                    assistant_content = []
+                    if text_response:
+                        assistant_content.append({"type": "text", "text": text_response})
+                    for tool_call in tool_calls:
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": tool_call["id"],
+                            "name": tool_call["name"],
+                            "input": tool_call["input"]
+                        })
+                    messages.append({"role": "assistant", "content": assistant_content})
+                    
+                    # Then append tool results as user message
+                    tool_result_content = []
+                    for tool_id, result in tool_results.items():
+                        tool_result_content.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_id,
+                            "content": str(result)
+                        })
+                    messages.append({"role": "user", "content": tool_result_content})
+                    
+                    # Add tool turn to history
+                    conversation_history.append(ConversationTurn(
+                        role="tool",
+                        content="Tool execution results",
+                        tool_results=tool_results
+                    ))
+                    continue  # Loop back for Claude to process tool results
+                
+                # No tool calls - Claude gave final response
+                if text_response:
+                    logger.info(f"\n💬 Claude's response:")
+                    logger.info(text_response[:500] + "..." if len(text_response) > 500 else text_response)
+                
+                # In interactive mode, check if we should continue
+                if interactive and self._is_interactive_terminal():
+                    if self._is_asking_for_input(text_response):
+                        logger.info(f"\n{'─'*40}")
+                        logger.info("✍️  Claude needs your input (type 'end' to finish):")
+                        user_input = input("You: ").strip()
+                        
+                        if user_input.lower() == 'end':
+                            ended_by = "user_end"
+                            break
+                        
+                        messages.append({"role": "user", "content": user_input})
+                        conversation_history.append(ConversationTurn(role="user", content=user_input))
+                        user_interventions += 1
+                        continue
+                    else:
+                        # Task complete - optionally continue
+                        logger.info(f"\n{'─'*40}")
+                        logger.info("✅ Task complete. Continue? (type message or 'end'):")
+                        user_input = input("You: ").strip()
+                        
+                        if user_input.lower() == 'end' or not user_input:
+                            break
+                        
+                        messages.append({"role": "user", "content": user_input})
+                        conversation_history.append(ConversationTurn(role="user", content=user_input))
+                        user_interventions += 1
+                        continue
+                
+                # Non-interactive or batch mode - stop here
+                break
+                
         except Exception as e:
-            trace["error"] = str(e)
-            logger.error(f"Error evaluating prompt: {e}")
+            ended_by = "error"
+            logger.error(f"Error: {e}")
+            return {
+                "agent_reasoning": final_reasoning,
+                "tools_attempted": all_tools_called,
+                "tool_params": all_tool_params,
+                "tool_results": all_tool_results,
+                "latency_ms": total_latency,
+                "token_count": total_tokens,
+                "conversation_history": conversation_history,
+                "user_interventions": user_interventions,
+                "ended_by": ended_by,
+                "error": str(e)
+            }
         
-        trace["latency_ms"] = (time.time() - start_time) * 1000
-        return trace
+        return {
+            "agent_reasoning": final_reasoning,
+            "tools_attempted": all_tools_called,
+            "tool_params": all_tool_params,
+            "tool_results": all_tool_results,
+            "latency_ms": total_latency,
+            "token_count": total_tokens,
+            "conversation_history": conversation_history,
+            "user_interventions": user_interventions,
+            "ended_by": ended_by,
+            "error": None
+        }
+    
+    def _is_asking_for_input(self, text: str) -> bool:
+        """Check if Claude is asking for user input"""
+        if not text:
+            return False
+        indicators = ["?", "please provide", "please specify", "which", "what", 
+                     "could you", "would you", "can you tell", "need to know", 
+                     "require", "clarify", "confirm"]
+        text_lower = text.lower()
+        return any(indicator in text_lower for indicator in indicators)
+    
+    def _is_interactive_terminal(self) -> bool:
+        """Check if running in an interactive terminal"""
+        import sys
+        return sys.stdin.isatty() and os.getenv('NON_INTERACTIVE') != 'true'
 
 
 # =======================
@@ -375,6 +528,9 @@ def create_result(
         tool_results=trace_data['tool_results'],
         latency_ms=trace_data['latency_ms'],
         token_count=trace_data.get('token_count', 0),
+        conversation_history=trace_data.get('conversation_history', []),
+        user_interventions=trace_data.get('user_interventions', 0),
+        ended_by=trace_data.get('ended_by', ''),
         error=trace_data.get('error')
     )
     
@@ -435,6 +591,7 @@ def main():
         epilog="""
 Examples:
   %(prog)s -q "Tell me about profiles" -o results.json
+  %(prog)s -q "Tell me about profiles" --interactive
   %(prog)s -c conversation.md -o results.json -i 3
   %(prog)s --csv test_queries.csv -o suite_results.json
         """
@@ -448,14 +605,22 @@ Examples:
     parser.add_argument('-i', '--iterations', type=int, default=1,
                         help='Number of iterations (default: 1)')
     parser.add_argument('-o', '--output', help='Output JSON file')
+    parser.add_argument('--interactive', action='store_true',
+                        help='Enable interactive mode for conversations')
     
     args = parser.parse_args()
+    
+    # Set environment variable for non-interactive mode if not explicitly interactive
+    if not args.interactive:
+        os.environ['NON_INTERACTIVE'] = 'true'
     
     # Initialize evaluator
     evaluator = MCPEvaluator()
     results = []
     
     logger.info("🚀 MCP Tool Evaluation Framework")
+    if args.interactive:
+        logger.info("   Mode: Interactive")
     logger.info("=" * 60)
     
     # Process based on input type
@@ -476,6 +641,7 @@ Examples:
             "query": args.query,
             "csv_file": args.csv,
             "iterations": args.iterations,
+            "mode": "interactive" if args.interactive else "batch",
             "input_type": "csv" if args.csv else ("conversation" if args.conversation else "query")
         }
         save_results(results, args.output, metadata)
@@ -499,7 +665,7 @@ def process_csv_tests(evaluator, args, results):
         logger.info(f"\n🔍 Test Case: {test_name}")
         logger.info(f"📝 Query: {query[:100]}..." if len(query) > 100 else f"Query: {query}")
         
-        trace_data = evaluator.evaluate_prompt(query)
+        trace_data = evaluator.evaluate_prompt(query, interactive=args.interactive)
         
         # Prepare test metadata
         test_metadata = {
@@ -530,7 +696,10 @@ def process_conversation(evaluator, args, results):
     
     for i in range(args.iterations):
         logger.info(f"\n🔍 Iteration {i+1}/{args.iterations}")
-        trace_data = evaluator.evaluate_prompt(messages[-1]["content"], messages)
+        if i > 0 and args.interactive:
+            input("Press Enter to start next iteration...")
+        
+        trace_data = evaluator.evaluate_prompt(messages[-1]["content"], messages, interactive=args.interactive)
         
         result = create_result(trace_data, messages[-1]["content"], i+1, args.conversation)
         results.append(result)
@@ -546,8 +715,10 @@ def process_single_query(evaluator, args, results):
     for i in range(args.iterations):
         if args.iterations > 1:
             logger.info(f"\n🔍 Iteration {i+1}/{args.iterations}")
+            if i > 0 and args.interactive:
+                input("Press Enter to start next iteration...")
         
-        trace_data = evaluator.evaluate_prompt(args.query)
+        trace_data = evaluator.evaluate_prompt(args.query, interactive=args.interactive)
         result = create_result(trace_data, args.query, i+1)
         results.append(result)
         
@@ -562,13 +733,12 @@ def log_evaluation_results(trace_data):
     else:
         logger.info(f"   🔧 Tools: {', '.join(trace_data['tools_attempted']) or 'None'}")
         logger.info(f"   ⏱️  Latency: {trace_data['latency_ms']:.0f}ms")
-        logger.info(f"\n💬 Response:")
-        logger.info(trace_data['agent_reasoning'])
         
-        if trace_data['tool_results']:
-            logger.info(f"\n📊 Tool Results:")
-            for tool, result in trace_data['tool_results'].items():
-                logger.info(f"   {tool}: {result[:200]}...")
+        if trace_data.get('user_interventions'):
+            logger.info(f"   👤 User interventions: {trace_data['user_interventions']}")
+        
+        if trace_data.get('ended_by'):
+            logger.info(f"   🏁 Ended by: {trace_data['ended_by']}")
 
 
 if __name__ == "__main__":

@@ -1,429 +1,343 @@
-# MCP LLM Evaluation Framework
+# MCP Interactive Evaluation Framework
 
-This document explains the LLM evaluation framework for testing how Claude Sonnet-4 interacts with RudderStack Profiles MCP server tools.
+Interactive LLM evaluation framework for testing Claude Sonnet-4 interactions with RudderStack Profiles MCP server tools in realistic conversation scenarios.
 
 ## Overview
 
-The evaluation framework tests MCP tool selection from an LLM evaluation perspective using **direct function import** for reliable testing of real MCP tool behavior.
+The framework provides comprehensive testing of MCP tool selection and conversation flow with both interactive and batch evaluation modes.
 
-## Architecture: Direct Function Import
+### Key Capabilities
 
-```mermaid
-graph LR
-    A[Test Query] --> B[Claude API]
-    B --> C[Tool Selection]
-    C --> D[Direct Function Call]
-    D --> E[Real MCP Tool]
-    E --> F[Result Analysis]
-    F --> G[CSV Output]
-    
-    subgraph "Mock Context"
-        H[MockContext]
-        I[AppContext]
-        J[Tool Instances]
-    end
-    
-    D --> H
-    H --> I
-    I --> J
+✅ **Interactive Conversations** - Multi-turn conversations with user input when needed  
+✅ **Continuous Tool Execution** - Claude automatically continues after tool results  
+✅ **Real MCP Tool Execution** - Direct function import, no mocking  
+✅ **Flexible Testing Modes** - Both batch and interactive evaluation  
+✅ **Complete Conversation Tracking** - Full conversation history with tool calls and results  
+
+## Quick Start
+
+### Prerequisites
+```bash
+# Environment variables required
+export ANTHROPIC_API_KEY="your-key"
+export RUDDERSTACK_PAT="your-pat"
+
+# Install dependencies
+uv sync
 ```
 
-## Test Files Overview
+### Basic Usage
 
-### Core Evaluation Files
+```bash
+# Batch mode (automated testing)
+python tests/evaluator.py -q "Tell me about profiles" -o results.json
 
-| File | Purpose | Status |
-|------|---------|---------|
-| `evaluator.py` | **Primary evaluation tool** - Direct function import approach | ✅ Active |
-| `run_tests.py` | Test runner - orchestrates evaluation execution | ✅ Active |
+# Interactive mode (realistic conversations)
+python tests/evaluator.py -q "Help me set up profiles project" --interactive
 
-### Supporting Files
+# Multiple iterations for consistency
+python tests/evaluator.py -q "How to create LTV model?" -i 5 -o results.json
+
+# CSV test suite
+python tests/evaluator.py --csv tests/test_queries.csv -o suite_results.json
+```
+
+## Architecture
+
+### Unified Evaluator Design
+
+Single `evaluator.py` file contains:
+
+- **MCPEvaluator**: Main evaluation engine with Claude API integration
+- **ConversationTurn**: Individual conversation turns (user/assistant/tool)  
+- **EvalResult**: Comprehensive result data with conversation history
+
+### Conversation Flow Engine
+
+```
+Initial Prompt → Claude Response → Tool Calls → Tool Execution → 
+Tool Results → Claude Processing → Final Response → User Input (optional) → Continue/End
+```
+
+### Design Principles
+
+1. **Single File Architecture**: All functionality in `evaluator.py` for simplicity
+2. **Real Tool Execution**: Direct function import, no mocking
+3. **Conversation Continuity**: Full conversation state maintained across tool calls
+4. **Mode Detection**: Automatic detection of interactive vs batch mode
+5. **Proper Message Structure**: Claude API compliant tool call formatting
+
+## Usage Modes
+
+### Batch Mode (Default)
+
+Automated testing without user intervention:
+
+```bash
+# Single query evaluation
+python evaluator.py -q "Tell me about profiles" -o results.json
+
+# Multiple iterations for consistency testing
+python evaluator.py -q "How to create LTV model?" -i 5 -o results.json
+
+# CSV test suite with validation
+python evaluator.py --csv test_queries.csv -o results.json
+```
+
+**Characteristics:**
+- Claude executes all available tools automatically
+- No user intervention required
+- Consistent, reproducible results
+- Ideal for regression testing and evaluation suites
+
+### Interactive Mode
+
+Realistic conversation testing with user input:
+
+```bash
+# Interactive single query
+python evaluator.py -q "Help me set up profiles project" --interactive
+
+# Interactive with conversation history
+python evaluator.py -c conversation.md --interactive
+
+# Interactive multiple iterations
+python evaluator.py -q "Create LTV model" --interactive -i 3
+```
+
+**Features:**
+- Claude continues automatically until task completion or input needed
+- User prompted only when Claude asks questions or needs clarification
+- Type `end` to finish conversation and move to next iteration
+- Natural conversation continuation with follow-up questions
+
+## File Structure
+
+### Core Files
 
 | File | Purpose | Usage |
 |------|---------|-------|
-| `test_constants.py` | Constants (Claude model version) | Configuration |
-| `prompts.py` | System prompts for different testing scenarios | Prompt templates |
-| `__init__.py` | Python package marker | Infrastructure |
+| `evaluator.py` | **Main evaluation tool** | Primary interface for all testing |
+| `run_tests.py` | Test runner orchestrator | Simple test execution |
+| `test_constants.py` | Configuration constants | Model versions, settings |
+| `prompts.py` | System prompts for testing | Different prompt styles |
 
-### Test Data & Configuration
+### Test Data
 
-| File | Purpose | Contents |
-|------|---------|----------|
-| `test_queries.csv` | Test cases with expected/forbidden tools | CSV test corpus |
-| `sample_conv.md` | Real conversation for testing conversation history | Markdown conversation |
-| `test_conv.md` | Additional conversation test case | Markdown conversation |
+| File | Purpose | Format |
+|------|---------|--------|
+| `test_queries.csv` | Test cases with validation | CSV with expected/forbidden tools |
+| `sample_conv.md` | Real conversation examples | Markdown conversation format |
+| `test_conv.md` | Additional conversation test | Markdown conversation format |
 
-### Output Files (Generated)
+### Generated Outputs
 
-| File | Purpose | Generated By |
-|------|---------|-------------|
-| `sample_conv_out.csv` | Conversation test results | mcp_eval_direct.py |
-| `mcp_samples_conv_*.csv` | Historical test outputs | Various runs |
+| File Pattern | Contents | Generated By |
+|--------------|----------|-------------|
+| `*.json` | Evaluation results | evaluator.py with `-o` flag |
+| `*_out.csv` | CSV formatted results | Historical test runs |
 
-## Implementation: Direct Function Import
+## Output Structure
 
-### Design Choice
-We use direct function import instead of MCP server stdio connection due to connection complexity and reliability issues. This approach provides real tool execution without server overhead.
+### JSON Results Format
 
-### Solution Architecture
-
-```python
-# Direct import of MCP tools as regular functions
-from main import (
-    about_profiles,
-    get_existing_connections,
-    search_profiles_docs,
-    # ... all MCP tools
-)
-
-# Mock context to satisfy MCP tool requirements
-@dataclass
-class MockContext:
-    request_context: MockRequestContext = None
-    
-    def __post_init__(self):
-        app_context = AppContext(
-            about=About(),
-            docs=Docs(), 
-            snowflake=Snowflake(),
-            profiles=ProfilesTools()
-        )
-        self.request_context = MockRequestContext(lifespan_context=app_context)
-
-# Execute tools directly
-def execute_tool(tool_name: str, tool_params: Dict) -> Any:
-    func = TOOL_FUNCTIONS[tool_name]
-    result = func(self.ctx, **tool_params)
-    return result
-```
-
-### Benefits
-- ✅ **Real tool execution** - Actual MCP tool behavior, not mocked
-- ✅ **No server overhead** - Direct function calls, no async/stdio complexity  
-- ✅ **Reliable testing** - Bypasses connection issues
-- ✅ **Fast execution** - No server startup time
-- ✅ **Easy debugging** - Direct Python stack traces
-
-## Evaluation Workflow
-
-```mermaid
-sequenceDiagram
-    participant T as Test Runner
-    participant E as DirectMCPEvaluator
-    participant C as Claude API
-    participant M as MCP Tools
-    participant O as CSV Output
-    
-    T->>E: Load conversation/query
-    E->>E: Parse markdown conversation
-    E->>C: Send prompt + tool definitions
-    C->>E: Return tool selection + reasoning
-    E->>M: Execute selected tools directly
-    M->>E: Return tool results
-    E->>O: Save evaluation trace
-    O->>T: Analysis complete
-```
-
-## Running Evaluations
-
-### Primary Tool: evaluator.py
-
-```bash
-# Test with conversation history
-python tests/evaluator.py -c tests/sample_conv.md -o results.json -i 3
-
-# Test single query
-python tests/evaluator.py -q "What connections are available?" -o results.json
-
-# Test CSV suite of queries (like test_queries.csv)
-python tests/evaluator.py --csv tests/test_queries.csv -o test_suite_results.json
-
-# Multiple iterations for consistency testing
-python tests/evaluator.py -q "Tell me about profiles" -i 10 -o results.json
-```
-
-### Via Test Runner
-
-```bash
-python tests/run_tests.py
-```
-
-## Requirements
-
-### Environment Setup
-- `ANTHROPIC_API_KEY` environment variable
-- `RUDDERSTACK_PAT` for MCP tool authentication
-- Python 3.10+ with required dependencies
-
-### Dependencies
-- `anthropic` - Claude API client
-- `dotenv` - Environment variable loading
-- Standard library: `csv`, `json`, `pathlib`, etc.
-
-## Output Analysis
-
-### JSON Output Format
 ```json
 {
   "metadata": {
-    "total_results": 3,
-    "generated_at": "2025-07-31T16:30:33.099893",
+    "total_results": 1,
+    "generated_at": "2025-08-04T15:40:11.196291",
     "model": "claude-4-sonnet-20250514",
-    "conversation_file": "tests/sample_conv.md",
-    "query": null,
-    "iterations": 3
+    "mode": "batch|interactive",
+    "iterations": 1,
+    "input_type": "query|conversation|csv"
   },
-  "results": [
-    {
-      "iteration": 1,
-      "timestamp": "2025-07-31T16:30:33.099893",
-      "model": "claude-4-sonnet-20250514",
-      "prompt": "lets go with these features first.",
-      "conversation_file": "tests/sample_conv.md",
-      "tools_called": ["profiles_workflow_guide"],
-      "tool_params": {"profiles_workflow_guide": {...}},
-      "agent_reasoning": "Perfect! Let me create the models.yaml...",
-      "tool_results": {"profiles_workflow_guide": "..."},
-      "latency_ms": 5045.46,
-      "token_count": 5710,
-      "error": null
-    }
-  ]
+  "results": [{
+    "iteration": 1,
+    "agent_reasoning": "Claude's final response after processing tools",
+    "tools_called": ["search_profiles_docs", "about_profiles"],
+    "tool_params": {"search_profiles_docs": {"query": "LTV model"}},
+    "tool_results": {"search_profiles_docs": "Documentation content..."},
+    "conversation_turns": 4,
+    "user_interventions": 2,
+    "ended_by": "completion|user_end|needs_input|error",
+    "conversation_history": [
+      {"role": "user", "content": "Initial query", "has_tools": false},
+      {"role": "assistant", "content": "", "has_tools": true},
+      {"role": "tool", "content": "Tool execution results", "has_tools": false},
+      {"role": "assistant", "content": "Final response", "has_tools": false}
+    ],
+    "latency_ms": 9054.67,
+    "token_count": 9612,
+    "error": null
+  }]
 }
 ```
 
-### Key Metrics Captured
-- **Model**: Exact LLM model used for each evaluation
-- **Tool Selection**: Which tools Claude chose (as array)
-- **Parameter Extraction**: How Claude interpreted tool parameters (as objects)
-- **Reasoning**: Claude's complete explanation and response
-- **Execution Results**: Actual tool output (full content, not truncated)
-- **Performance**: Latency and token usage
-- **Error Handling**: Any failures in execution
+### Key Result Fields
 
-## Test Insights & Results
+- **`agent_reasoning`**: Claude's final response after processing all tool results
+- **`conversation_history`**: Complete conversation flow including tool execution
+- **`tools_called`**: All MCP tools used during conversation
+- **`user_interventions`**: Number of times user provided input
+- **`ended_by`**: How the conversation concluded (completion/user_end/needs_input/error)
 
-### Tool Selection Patterns
-1. **profiles_workflow_guide dominance** - Claude prefers workflow guide for setup questions
-2. **Smart parameter extraction** - Excellent at inferring topic parameters
-3. **Context awareness** - Considers conversation history effectively
-4. **Fallback behavior** - Graceful handling of ambiguous prompts
+## Testing Workflows
 
-### Performance Characteristics
-- **Average latency**: ~3-8 seconds per evaluation
-- **Token efficiency**: 3-8K tokens per interaction
-- **Success rate**: Varies by test type and complexity
-- **Consistency**: High repeatability across iterations
+### Development Testing
 
-## What This Framework Enables
-
-### 1. **Real Tool Behavior Testing**
-- Test actual MCP tool execution, not mocked behavior
-- Validate tool parameter handling and edge cases
-- Capture real performance characteristics
-
-### 2. **Conversation History Testing**
-- Load real conversations from markdown files
-- Test how conversation context affects tool selection
-- Validate multi-turn interaction patterns
-
-### 3. **CSV Test Suite Validation**
-- Run comprehensive test suites with expected/forbidden tools
-- Validate tool selection against defined criteria
-- Batch testing with automatic pass/fail validation
-
-### 4. **Prompt Engineering Validation**
-- Test tool description effectiveness
-- Measure impact of description changes on selection
-- Optimize tool boundaries and responsibilities
-
-### 5. **Regression Testing**
-- Ensure consistent tool selection across updates
-- Catch unintended changes in tool behavior
-- Validate new tool integration doesn't break existing patterns
-
-This framework provides reliable testing of MCP tool selection and execution behavior with minimal complexity.
-
-## File-by-File Usage Guide
-
-### Core Evaluation Tools
-
-#### `evaluator.py` ⭐ **Recommended**
-**Purpose**: Primary evaluation tool using direct function import approach
-
-**Usage**:
 ```bash
-# Conversation testing
-python tests/evaluator.py -c tests/sample_conv.md -o results.json -i 3
+# 1. Quick single query test
+python evaluator.py -q "Your test query" -o quick_test.json
 
-# Single query testing  
-python tests/evaluator.py -q "What connections are available?" -o test.json
+# 2. Interactive testing for complex scenarios
+python evaluator.py -q "Complex setup task" --interactive
+
+# 3. Conversation context testing
+python evaluator.py -c sample_conv.md -o conv_test.json
+
+# 4. Consistency validation
+python evaluator.py -q "Your test query" -i 10 -o consistency.json
+```
+
+### Regression Testing
+
+```bash
+# Standard test suite
+python run_tests.py
 
 # CSV test suite with validation
-python tests/evaluator.py --csv tests/test_queries.csv -o suite_results.json
+python evaluator.py --csv test_queries.csv -o regression.json
 
-# Multiple iterations for consistency
-python tests/evaluator.py -q "Tell me about profiles" -i 10 -o consistency.json
+# Batch consistency testing
+python evaluator.py -q "Core functionality test" -i 5 -o regression.json
 ```
 
-**Key Features**:
-- ✅ Real MCP tool execution
-- ✅ Conversation history support
-- ✅ CSV test suite support (with validation)
-- ✅ Direct function calls (no server overhead)
-- ✅ Comprehensive JSON output
-- ✅ Mock context for tool requirements
+### Performance Analysis
 
-#### `run_tests.py`
-**Purpose**: Test runner that orchestrates evaluation execution
-
-**Usage**:
 ```bash
-python tests/run_tests.py
+# Token usage analysis
+python evaluator.py -q "Complex query" -i 5 -o performance.json
+
+# Conversation efficiency testing
+python evaluator.py -c long_conversation.md --interactive -o efficiency.json
+
+# Tool selection pattern analysis
+python evaluator.py --csv tool_selection_tests.csv -o patterns.json
 ```
 
-**What it does**: Runs the evaluation framework
+## CSV Test Suite Format
 
-### Support & Configuration Files
+### Test File Structure
 
-#### `test_constants.py`
-**Purpose**: Configuration constants
-
-**Contents**:
-```python
-SONNET_MODEL="claude-4-sonnet-20250514"
-```
-
-#### `prompts.py`
-**Purpose**: System prompts for different testing scenarios
-
-**Contents**:
-- `CLAUDE_CODE_SYSTEM_PROMPT` - Default prompt matching Claude Code style
-- `VERBOSE_SYSTEM_PROMPT` - Detailed, explanatory responses  
-- `MINIMAL_SYSTEM_PROMPT` - Concise, direct responses
-- `TOOL_SELECTION_PROMPT` - Focused on tool selection testing
-
-**Usage**: Import desired prompt in evaluation code for different testing behaviors
-
-#### `__init__.py`
-**Purpose**: Makes tests directory a Python package (empty file)
-
-### Test Data Files
-
-#### `test_queries.csv`
-**Purpose**: CSV corpus of test cases with expected/forbidden tools
-
-**Format**:
 ```csv
 test_name,user_prompt,expected_tools,forbidden_tools,description
-profiles_basic,Tell me about RudderStack Profiles,about_profiles,,Basic profiles information request
-connections,What connections are available?,get_existing_connections,about_profiles,Test specific over general tool selection
+profiles_basic,Tell me about RudderStack Profiles,about_profiles,,Basic profiles information
+connections,What connections are available?,get_existing_connections,about_profiles,Specific tool selection
+setup_project,Help me set up a profiles project,profiles_workflow_guide,search_profiles_docs,Workflow guidance
 ```
 
-**CSV Columns:**
-- `test_name`: Unique test identifier
-- `user_prompt` (or `prompt`): The query to send to Claude
-- `expected_tools`: Comma-separated tools that should be called (optional)
-- `forbidden_tools`: Comma-separated tools that should NOT be called (optional)
-- `description`: Human-readable test description
+### CSV Columns
 
-**Validation**: When using `--csv`, the framework automatically validates tool selection against expected/forbidden criteria and reports PASS/FAIL for each test.
+- **`test_name`**: Unique test identifier
+- **`user_prompt`** (or `prompt`): Query to send to Claude
+- **`expected_tools`**: Comma-separated tools that should be called (optional)
+- **`forbidden_tools`**: Comma-separated tools that should NOT be called (optional)
+- **`description`**: Human-readable test description
 
-#### `sample_conv.md`
-**Purpose**: Real conversation exported from Claude/Cursor for testing conversation history
+### Validation Logic
 
-**Usage**: Used with `-c` flag in evaluation tools
+The framework automatically validates tool selection against expected/forbidden criteria:
+- ✅ **PASS**: Expected tools called, forbidden tools not called
+- ❌ **FAIL**: Expected tools missing or forbidden tools called
 
-**Format**: Markdown with **User** and **Assistant** headers
+## Advanced Features
 
-#### `test_conv.md`
-**Purpose**: Additional conversation test case
+### Custom System Prompts
 
-**Usage**: Alternative conversation file for testing
-
-### Output Files (Generated)
-
-#### `results.json` / `sample_conv_out.json`
-**Generated by**: evaluator.py with `-o` flag
-**Contains**: Conversation or query evaluation results in JSON format
-
-#### `mcp_samples_conv_*.csv`
-**Generated by**: Historical test runs
-**Contains**: Timestamped evaluation outputs
-
-## Workflow Recommendations
-
-### For New Development
-```bash
-# 1. Test single queries first
-python tests/evaluator.py -q "Your test query" -o quick_test.json
-
-# 2. Test with conversation context
-python tests/evaluator.py -c tests/sample_conv.md -o conv_test.json
-
-# 3. Run CSV test suite for validation
-python tests/evaluator.py --csv tests/test_queries.csv -o validation.json
-
-# 4. Run consistency checks
-python tests/evaluator.py -q "Your test query" -i 10 -o consistency.json
-```
-
-### For Regression Testing
-```bash
-# Run the standard test suite
-python tests/run_tests.py
-
-# Or run CSV test suite directly
-python tests/evaluator.py --csv tests/test_queries.csv -o regression_results.json
-```
-
-### For Custom Testing
-```bash
-# Create your own conversation file and test it
-python tests/evaluator.py -c your_conversation.md -o results.json
-
-# Test specific tool selection patterns
-python tests/evaluator.py -q "Your specific prompt" -i 5 -o patterns.json
-```
-
-The **evaluator.py** is the recommended method for testing MCP tool behavior with minimal complexity.
-
-## Advanced Testing: Custom System Prompts
-
-### Available System Prompts
-
-The framework includes multiple system prompts in `tests/prompts.py`:
+Available prompts in `prompts.py`:
 
 | Prompt | Purpose | Use Case |
 |--------|---------|----------|
-| `CLAUDE_CODE_SYSTEM_PROMPT` | Default - matches Claude Code style | Standard evaluation, conversation testing |
-| `VERBOSE_SYSTEM_PROMPT` | Detailed explanations and guidance | Testing comprehensive responses |
-| `MINIMAL_SYSTEM_PROMPT` | Concise, direct responses | Testing minimal interaction patterns |
-| `TOOL_SELECTION_PROMPT` | Focused on tool selection logic | Testing tool choice behavior specifically |
+| `CLAUDE_CODE_SYSTEM_PROMPT` | Default - matches Claude Code style | Standard evaluation |
+| `VERBOSE_SYSTEM_PROMPT` | Detailed explanations | Comprehensive responses |
+| `MINIMAL_SYSTEM_PROMPT` | Concise responses | Minimal interaction testing |
+| `TOOL_SELECTION_PROMPT` | Focused on tool selection | Tool choice behavior testing |
 
-### Using Custom Prompts
+### Conversation History Testing
 
-To test different prompt behaviors, modify the `_get_system_prompt()` method in `evaluator.py`:
+Load real conversations from markdown files:
 
-```python
-def _get_system_prompt(self) -> str:
-    """Get system prompt from prompts module"""
-    from prompts import VERBOSE_SYSTEM_PROMPT  # Change this line
-    return VERBOSE_SYSTEM_PROMPT
+```markdown
+**User**
+Help me set up a profiles project
+
+**Assistant**  
+I'll help you set up a RudderStack Profiles project...
+
+**User**
+Let's focus on customer LTV modeling
 ```
 
-### Testing Prompt Variations
+Usage:
+```bash
+python evaluator.py -c your_conversation.md --interactive
+```
+
+### Multi-Iteration Testing
+
+Test consistency and variation across multiple runs:
 
 ```bash
-# Test the same query with different prompts by modifying prompts.py
-python tests/evaluator.py -q "Tell me about profiles" -o claude_code_style.json
-# (modify prompt in code)
-python tests/evaluator.py -q "Tell me about profiles" -o verbose_style.json
-# (compare results)
+# Consistency testing
+python evaluator.py -q "Tell me about profiles" -i 10 -o consistency.json
+
+# Interactive multi-session testing
+python evaluator.py -q "Help with setup" --interactive -i 3
 ```
 
-This enables testing how different prompt styles affect:
-- Tool selection patterns
-- Response verbosity
-- Parameter extraction accuracy
-- Multi-tool workflows
+## What This Framework Enables
+
+### 1. Realistic Conversation Testing
+- Multi-turn conversations with natural flow
+- User interaction simulation for complex scenarios
+- Context-aware tool selection validation
+
+### 2. Tool Chain Validation  
+- Test sequences of tool calls and their interactions
+- Validate tool result processing and continuation
+- Ensure proper conversation state management
+
+### 3. Batch Evaluation
+- Automated testing of tool selection and execution
+- Regression testing for consistent behavior
+- Performance analysis and token usage tracking
+
+### 4. Interactive Scenario Testing
+- Test complex scenarios requiring user clarification
+- Validate natural conversation flow and continuity
+- Real-world usage pattern simulation
+
+### 5. Development & Debugging
+- Tool selection pattern analysis
+- Prompt engineering validation
+- Error handling and edge case testing
+
+## Integration with Main Project
+
+This evaluation framework integrates with the main RudderStack Profiles MCP server:
+
+- **Direct Function Import**: Uses actual MCP tools from `src/main.py`
+- **Real Tool Execution**: Executes actual business logic, not mocks
+- **Mock Context Only**: Only the MCP request context is mocked
+- **Authentication**: Requires `RUDDERSTACK_PAT` for tool authentication
+- **Environment Consistency**: Same Python version and dependencies as main project
+
+## Performance Characteristics
+
+- **Average Latency**: 3-10 seconds per evaluation (depending on tool complexity)
+- **Token Usage**: 3-15K tokens per interaction
+- **Success Rate**: High reliability with proper error handling
+- **Consistency**: Reproducible results across iterations
+- **Scalability**: Handles both single queries and large test suites
+
+This framework provides comprehensive testing capabilities for MCP tool behavior with both automated and interactive evaluation modes.
