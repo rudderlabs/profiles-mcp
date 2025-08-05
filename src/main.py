@@ -115,7 +115,7 @@ def about_profiles(ctx: Context, topic: str = "profiles") -> str:
     - about_profiles(topic="inputs") - Set up data sources in inputs.yaml
     - about_profiles(topic="models") - Define features and identity resolution
     - about_profiles(topic="macros") - Create reusable SQL snippets
-    - about_profiles(topic="propensity") - Build predictive models
+    - about_profiles(topic="propensity") - Build predictive models (LTV prediction, churn prediction, lead score etc)
     - about_profiles(topic="datediff-entity-vars") - Create time-based features
 
     Also use these complementary tools:
