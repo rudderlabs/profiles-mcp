@@ -1060,16 +1060,19 @@ vars:
 # Propensity Score Configuration
 
 ## Overview
-Using Profile's Propensity Scores Data App, you can predict the likelihood of user actions using machine learning (ML) algorithms. These predictive capabilities enable data-driven decision-making by calculating scores that represent the probability of a user performing a specific action within a predefined timeframe.
+'propensity' is a model type within profiles. There are two types of propensity models: classification and regression. 
+With this, you can build classification and regression models to predict the future revenue/likelihood of user actions etc using machine learning (ML) algorithms. 
+These predictive capabilities enable data-driven decision-making by calculating scores that represent the users' likely future state within a predefined timeframe.
 
 ## Use Cases
-- **Reduced churn**: Identify users at risk of churning and implement targeted interventions
-- **Increased conversions**: Prioritize leads with a higher propensity to convert
-- **Improved resource allocation**: Focus resources on high-value user segments
+- **Future LTV/Revenue**: Compute the numeric future revenue the customers are likely to generate in the next n days (typically a regression model)
+- **Reduced churn**: Identify users at risk of churning and implement targeted interventions (classification model)
+- **Increased conversions**: Prioritize leads with a higher propensity to convert (classification model)
+- **Improved resource allocation**: Focus resources on high-value user segments (regression/classification model, depending on the use-case)
 
 ## Prerequisites
-- An active RudderStack Profiles project (v0.18.0 or above) using Snowflake, BigQuery, or Redshift
-- Install the profiles-mlcorelib library: `pip install profiles-mlcorelib`
+- An active RudderStack Profiles project (v0.22.0 or above) using Snowflake, BigQuery, or Redshift. If an older version, you can upgrade to v0.22.0 by running `pip install --upgrade profiles-rudderstack`
+- Install the profiles-mlcorelib library: `pip install --upgrade profiles-mlcorelib`
 - Python requirements:
   - Redshift/BigQuery: Python 3.9.0 to 3.11.10
   - Snowflake: Python ≥ 3.9.0 and < 3.11.0
@@ -1081,23 +1084,40 @@ python_requirements:
 
 ## Project Setup Steps
 
-### Step 1: Define the Label (Prediction Target)
-Identify the action you want to predict (e.g., churn, conversion, purchase):
+### Step 1: Choose Model Type
+Classification is for binary outcomes (yes/no, true/false, 0/1) like churn, conversion, payer prediction.
+Regression is for numeric outcomes like revenue, LTV, days to convert.
+
+#### Guidelines:
+- Classification: Easier to interpret but requires min 5% distribution in both classes
+- Regression: More flexible but may produce negative values (acceptable for cohort analysis)
+
+### Step 2: Define the Label (Prediction Target)
+If the label entity-var is already defined in the project, you can skip this step and reuse that.
+Identify the action you want to predict (e.g., churn, conversion, purchase)
+
+**Note**: 
+* For classification tasks, the label must be Boolean/Binary (0/1, true/false, yes/no) 
+* For regression tasks, the label must be numeric.
 ```yaml
 var_groups:
+
   - name: user_metrics
     entity_key: user
     vars:
+      # In case of payer-conversion
       - entity_var:
             name: is_payer
-            select: case when user.revenue > 0 then 1 else 0 end
+            select: case when user.revenue > 0 then 1 else 0 end # Assuming revenue entity-var is already defined. 
+      # In case of 30 day LTV/Revenue after first seen
+      - entity_var:
+            name: future_revenue_30_days
+            select: sum(amount)
+            from: inputs/orders
+            where: "{{macro_datediff_n('first_seen','30')}}" # Assuming first_seen entity-var is already defined. Ensure about_profiles(topic="macros") is called to understand how to use date macros correctly.
 ```
 
-The label must be Boolean/Binary (0/1, true/false, yes/no) for propensity modeling.
-
-> **Note**: Propensity models can also predict numeric values (e.g., predicted LTV).
-
-### Step 2: Define Relevant Features
+### Step 3: Define Relevant Features
 Define entity_vars that may predict user behavior:
 ```yaml
 var_groups:
@@ -1114,76 +1134,79 @@ var_groups:
           from: inputs/rsPages
           default_value: 0
 ```
+#### Feature Requirements:
+1. Currently, only numeric, datetime, and categorical features are supported. Array type or super/json type features are not supported.
+2. Use features derived from event stream datasources (from input sources with is_event_stream: true). Features from static ETL tables without history will result in overconfident models.
 
-### Step 3: Set the Prediction Window
-Define the timeframe for prediction in your models.yaml:
+### Step 4: Set the Prediction Window
+The prediction window is the time period for predicting future user state.
+
+#### Common Windows by Use Case:
+- **LTV (new users)**: 30 days - optimizing for new user campaigns
+- **LTV (retention)**: 90 days - subscription retargeting
+- **Churn (high engagement)**: 7 days - gaming, daily active apps
+- **Churn (low frequency)**: 90-180 days - occasional usage products
+- **Lead Score**: 7 days - quick conversion decisions 
+
+### Step 5: Define Eligible Users
+Eligible users are the subset used for model training. This is a SQL WHERE clause on the C360 table.
+
+#### Requirements:
+1. All features in the clause must be defined as entity_vars with is_feature: true (default)
+2. All referenced features must be in the inputs list
+
+#### Common Patterns:
+- **LTV (new users)**: `days_since_account_creation <= 7`
+- **LTV (retention)**: `days_since_last_seen <= 30 AND has_active_subscription = 1`
+- **Churn**: `days_since_last_seen <= 7`
+- **Lead Score**: `days_since_account_creation <= 7 AND is_payer = 0`
+
+
+### Step 6: Name Output Features
+The model outputs two features:
+1. **Percentile score**: Relative ranking (0-100)
+2. **Prediction score**: 
+   - Classification: Probability (0-1)
+   - Regression: Numeric value
+
+Control visibility with `is_feature` parameter:
+- `is_feature: True` → Available in C360 view (recommended for percentile)
+- `is_feature: False` → Only in dedicated table (recommended for raw scores)
+
+
+### Step 7: Define Inputs
+List all entity_vars needed:
+1. Features for training
+2. The label column
+3. Variables used in eligible_users clause
+
+Use `ignore_features` to exclude specific vars from training while keeping them available for filtering.
+
+## Configuration Example
 ```yaml
 models:
-    - name: payer_propensity_model
-      model_type: propensity
-      model_spec:
-          inputs:
-              - entity/user/days_since_account_creation
-              - entity/user/days_since_last_seen
-              - entity/user/revenue
-              - entity/user/is_payer
-              - entity/user/country
-              - entity/user/n_sessions
-          training:
-              predict_var: entity/user/is_payer
-              label_value: 1
-              predict_window_days: 30
-              eligible_users: days_since_account_creation <= 30 and country = 'US' and revenue = 0
-```
-
-### Step 4: Name the Predictive Features
-```yaml
-prediction:
-    output_columns:
-        percentile:
-            name: payer_propensity_percentile
-            description: Percentile score of a user's likelihood to pay in the next 30 days
-        score:
-            name: payer_propensity_probability
-            description: Probability score of a user's likelihood to pay in the next 30 days
-```
-
-## Complete Configuration Example
-```yaml
-models:
-    - name: payer_propensity_model
+    - name: ltv_30d_prediction_model
       model_type: propensity
       model_spec:
           entity_key: user
           training:
-              predict_var: entity/user/is_payer
-              label_value: 1
+              predict_var: entity/user/total_amount_spent
               predict_window_days: 30
               validity: month
-              type: classification
-              eligible_users: days_since_account_creation <= 30 and country = 'US' and revenue = 0
+              type: regression
+              eligible_users: days_since_account_creation <= 7 and country = 'US' and revenue = 0
               max_row_count: 50000
-              recall_to_precision_importance: 1.0
-              new_materialisations_config:
-                  strategy: auto
-                  feature_data_min_date_diff: 14
-                  max_no_of_dates: 3
-                  dates:
-                      - '2024-01-01,2024-01-08'
-                      - '2024-02-01,2024-02-08'
-                      - '2024-03-01,2024-03-08'
-              ignore_features:
-                  - country
           prediction:
               output_columns:
                   percentile:
                       name: payer_propensity_percentile
                       description: Percentile score of a user's likelihood to pay in the next 30 days
+                      is_feature: True
                   score:
                       name: payer_propensity_probability
                       description: Probability score of a user's likelihood to pay in the next 30 days
                       is_feature: False
-              eligible_users: '*'
+              eligible_users: days_since_account_creation <= 7 and country = 'US' and revenue = 0
           inputs:
               - entity/user/days_since_account_creation
               - entity/user/days_since_last_seen
@@ -1191,6 +1214,7 @@ models:
               - entity/user/is_payer
               - entity/user/country
               - entity/user/n_sessions
+              - entity/user/total_amount_spent
 ```
 
 ## Key Parameters
@@ -1198,50 +1222,113 @@ models:
 - **model_type**: Set to 'propensity'
 - **entity_key**: Entity to use
 - **predict_var**: entity_var for prediction in the format of entity/entity_key/entity_var_name
-- **label_value**: Value of label for prediction
 - **predict_window_days**: Time period for prediction
 - **validity**: Re-training period (day, week, month)
 - **type**: 'classification' for boolean, 'regression' for numeric
 - **eligible_users**: SQL condition defining user set for training
 - **max_row_count**: Maximum samples for training (default: 30,000)
-- **recall_to_precision_importance**: Balance between false positives/negatives
 - **ignore_features**: Features to exclude from model
 - **inputs**: List of entity_vars to use for training in the format of entity/entity_key/entity_var_name
 
 ## Common Pitfalls
-  - Propensity model can refer to only those entity_vars listed in the inputs section. So all entity_vars referenced in the eligible users clause, and also the label, must be listed in the inputs section. These should ofcourse be defined in the yamls
-  - Any entity_vars defined in the inputs must not have current_timestamp() or other timestamp functions in their definitions. They **must** use the datediff macros only to get datediff based features such as is_active_in_past_30_days, days_since_last_seen, etc.
-  - If any input tables are not event-stream type - for example, ETL tables that overwrite previous data - it is impossible to create "as of" features. Features derived from such tables should not be used in propensity models. We cannot assume that the input tables have historic data. It is important to check the min and max of the timestamp columns from each of the input tables, which give a decent idea of the data availability.
-  - Propensity models aren't supported on profiles cohorts currently. The only way to use propensity models on a subset of users is to use the `eligible_users` clause.
+- Propensity model can refer to only those entity_vars listed in the inputs section
+- Entity_vars must not use current_timestamp() - use datediff macros instead
+- Features from static ETL tables without history will cause training issues
+- Propensity models are NOT supported on profiles cohorts - use eligible_users instead
+- All entity_vars in eligible_users clause must be listed in inputs
 
 
-## Output
-After running the project:
-
+## Output Structure
 ### Training Output
-Post training, profiles (pb run) creates a new folder in the outputs folder along with all other model outputs. Most profiles models create sql files in the outputs folder.
-But for propensity models, the output is a set of image files and json files, in a dedicated directory within the outputs folder. The folder name is the material name, which would be of following format:
-Material_<model_name>_<hash>_<seq_no>. Following are all the files in the folder:
-.
+```
+Material_<model_name>_<hash>_<seq_no>/
 ├── training_file.json
-└── training_reports
-    ├── 01-feature-importance-chart-<propensity_model_name>_training.png
-    ├── 02-test-lift-chart-<propensity_model_name>_training.png
-    ├── 03-test-pr-auc-<propensity_model_name>_training.png
-    ├── 04-test-roc-auc-<propensity_model_name>_training.png
+└── training_reports/
+    ├── 01-feature-importance-chart-*.png
+    ├── 02-[lift/residuals]-chart-*.png  # lift for classification, residuals for regression
+    ├── 03-[pr-auc/deciles]-*.png       # pr-auc for classification, deciles for regression
+    ├── 04-test-roc-auc-*.png  # Only for classification
     └── training_summary.json
-
-For more details about the output, call the tool `get_profiles_output_details` after a successful run with propensity model.
+```
 
 ### Prediction Output
-A new table in your warehouse containing:
-- Probability score (0-1)
-- Percentile score (for segmentation)
-- Boolean flag (likely/unlikely indicator)
+- Warehouse tables with scores for each entity
+- Table naming from `prediction.output_columns` config
+- Feature availability based on `is_feature` setting
 
 ## Running Your Project
-- Via CLI: `pb run`
-- Via Profiles UI: Upload to Git repository and import in RudderStack dashboard
+- `pb run`
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## 🚨 MANDATORY USER INTERACTIONS - AI AGENTS MUST ASK THESE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### ✅ REQUIRED CHECKPOINT 1: Prediction Window
+**AI MUST ASK WITH RECOMMENDATIONS**: "What time window do you want to predict? Based on your use case, I recommend:
+[Provide specific recommendation based on use case, e.g.:]
+- For churn prediction in gaming: 7 days (high engagement product)
+- For SaaS churn: 90 days (lower frequency usage)
+- For new user LTV: 30 days (early revenue signals)
+- For retention LTV: 90 days (mature behavior patterns)
+
+What prediction window would you like to use?"
+
+**HONOR USER'S CHOICE** even if different from recommendation
+
+### ✅ REQUIRED CHECKPOINT 2: Eligible Users Definition  
+**AI MUST ASK WITH SPECIFIC SUGGESTIONS**: "Which users should be included in model training? Based on your use case, I recommend:
+
+[Provide 2-3 specific SQL criteria options, e.g.:]
+Option 1: `days_since_account_creation <= 7 AND country = 'US'` (new US users)
+Option 2: `days_since_last_seen <= 30 AND total_orders > 0` (recent active buyers)
+Option 3: `is_subscribed = 1 AND days_since_last_payment <= 60` (active subscribers)
+
+Which criteria would you like to use, or would you prefer different criteria?"
+
+**WAIT for user confirmation of exact SQL criteria**
+
+### ✅ REQUIRED CHECKPOINT 3: Output Column Names
+**AI MUST ASK WITH CONTEXTUAL SUGGESTIONS**: "What should I name the prediction outputs? Based on your [churn/LTV/conversion] model, I suggest:
+
+- Percentile score: `[use_case]_likelihood_percentile` (e.g., churn_likelihood_percentile)
+- Prediction score: `predicted_[metric]` (e.g., predicted_30d_revenue)
+
+Would you like to use these names or prefer different ones?"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+## ⚠️ AI AGENT RULES - NEVER SKIP THESE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+### 🤖 AUTONOMOUS DECISIONS (No user input needed):
+1. **Model Type**: Determine classification vs regression based on use case
+   - Binary outcomes → Classification
+   - Numeric outcomes → Regression
+2. **Feature Selection**: Choose appropriate features based on:
+   - Use case requirements
+   - Available entity_vars
+   - Feature quality (exclude arrays, JSONs)
+   - Event stream vs static table sources
+
+### 🛑 MANDATORY USER DECISIONS (Always ask):
+1. **Prediction Window**: ALWAYS ask with recommendations
+2. **Eligible Users**: ALWAYS ask with specific SQL suggestions
+3. **Output Names**: ALWAYS ask with contextual suggestions
+
+### 📋 BEST PRACTICES:
+1. **ALWAYS** provide specific recommendations when asking for input
+2. **ALWAYS** explain why you're recommending certain values
+3. **ALWAYS** honor user's choice even if different from recommendation
+4. **ALWAYS** validate entity_vars exist before using in config
+5. **ALWAYS** ensure all referenced vars are in inputs list for the propensity model
+6. **EXPLAIN** negative values for regression models (if user asks)
+
+### 🚫 BLOCKING CONDITIONS
+AI MUST NOT create propensity config if:
+- User hasn't confirmed prediction window
+- User hasn't approved eligible users criteria  
+- User hasn't confirmed output column names
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         """
         return docs
 
