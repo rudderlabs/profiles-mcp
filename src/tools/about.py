@@ -1,3 +1,5 @@
+from utils.environment import is_cloud_based_environment
+
 class About:
     def __init__(self):
         pass
@@ -45,8 +47,34 @@ class About:
 
         return topic_mapping[topic]()
 
+    
+    def _get_virtual_env_section(self) -> str:
+        """Generate virtual environment setup section based on environment."""
+        if is_cloud_based_environment():
+            virtual_env_section = """### 1. Kubernetes Pod Environment Setup
+
+Since you're running in a Kubernetes pod environment, the required Python packages
+(profiles-rudderstack, profiles-mlcorelib) should already be available in your container.
+
+**No virtual environment setup required** - you can directly use the `pb` CLI tool."""
+        else:
+            virtual_env_section = """### 1. Set up Python virtual environment and install required packages
+```bash
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install required packages
+pip install profiles-rudderstack
+pip install profiles-mlcorelib>=0.8.1
+```"""
+        
+        return virtual_env_section
+
     def about_profiles(self) -> str:
-        docs = """
+        virtual_env_section = self._get_virtual_env_section()
+        
+        docs = f"""
 # RudderStack Profiles Quick Start Guide
 
 RudderStack Profiles is a customer data unification platform that runs natively in your Snowflake warehouse. It helps you:
@@ -306,7 +334,7 @@ pb run --begin_time '2024-11-01T00:00:00Z'
 6. **PREFER** simple solutions over complex ones
 7. **VERIFY** all column names exist before using them
 8. **USE** current year (2025) in all date references
-        """
+        """.format(virtual_env_section=virtual_env_section)
         return docs
 
     def about_pb_cli(self) -> str:
@@ -322,16 +350,7 @@ pb <command> <subcommand> [parameters]
 
 ## Quick Setup
 
-### 1. Set up Python virtual environment and install required packages
-```bash
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install required packages
-pip install profiles-rudderstack
-pip install profiles-mlcorelib>=0.8.1
-```
+{virtual_env_section}
 
 ### 2. Initialize Profiles Builder CLI
 ```bash
