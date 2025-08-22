@@ -5,10 +5,10 @@ import subprocess
 import json
 import re
 import glob
-from pathlib import Path
 import datetime
 from logger import setup_logger
 from constants import PB_SITE_CONFIG_PATH
+from utils.environment import is_cloud_based_environment
 
 
 logger = setup_logger(__name__)
@@ -340,8 +340,8 @@ class ProfilesTools:
         Steps:
         1. Ensure the project directory exists.
         2. Verify Python 3.10 is installed.
-        3. Create a Python virtual environment.
-        4. Install the profiles-rudderstack package using pip.
+        3. Create a Python virtual environment (unless running in kubernetes pod environment).
+        4. Install the profiles-rudderstack package using pip (unless running in kubernetes pod).
         5. Return a status dict with messages and errors.
         """
         messages = []
@@ -439,6 +439,11 @@ class ProfilesTools:
         pip_executable = find_executable("pip3") or find_executable("pip")
         if not pip_executable:
             return {"status": "failure", "messages": messages, "errors": errors}
+
+        # Check if running in kubernetes pod
+        if is_cloud_based_environment():
+            messages.append("Kubernetes pod detected - skipping virtual environment creation")
+            return self._setup_cloud_based_project(abs_project_path, messages)
 
         venv_path = os.path.join(abs_project_path, ".venv")
         venv_bin_dir = os.path.join(venv_path, "bin" if os.name != "nt" else "Scripts")
@@ -558,6 +563,62 @@ For more information, refer to the RudderStack Profiles documentation.
             return result.returncode == 0
         except Exception:
             return False
+
+
+    def _setup_cloud_based_project(self, project_path: str, messages: list) -> dict:
+        """Setup project for kubernetes pod (no virtual environment needed)."""
+        errors = []
+
+        # Create README.md file with cloud-specific instructions
+        readme_path = os.path.join(project_path, "README.md")
+        readme_content = """# RudderStack Profiles Project (Kubernetes Pod Environment)
+
+## Environment Setup
+
+This project is configured for a kubernetes pod environment where Python packages are pre-installed.
+
+### Running in Kubernetes Pod Environment
+
+Since you're running in a kubernetes pod, the required Python packages 
+(profiles-rudderstack, profiles-mlcorelib) should already be available in your container.
+
+## Getting Started
+
+You can directly start using Profiles commands with the `pb` CLI tool:
+
+1. Initialize a new connection:
+
+   ```
+   pb init connection
+   ```
+
+   or
+
+   use initialize_snowflake_connection() tool to create a new connection
+
+2. Create your project configuration files (pb_project.yaml, inputs.yaml, models.yaml)
+
+3. Run your profiles project:
+   ```
+   pb run
+   ```
+
+For more information, refer to the RudderStack Profiles documentation.
+"""
+
+        try:
+            with open(readme_path, "w") as f:
+                f.write(readme_content)
+            messages.append("Created README.md with cloud environment instructions")
+        except Exception as e:
+            errors.append(f"Error creating README.md file: {e}")
+
+        return {
+            "status": "success",
+            "summary": "Project setup complete for kubernetes pod",
+            "messages": messages,
+            "errors": [],
+        }
 
     def workflow_guide(self, user_goal: str, current_action: str = "start", user_confirmed_tables: str = "", user_confirmed_connection: str = "", knowledge_phase_completed: str = "") -> dict:
         """
