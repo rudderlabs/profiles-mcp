@@ -72,8 +72,6 @@ pip install profiles-mlcorelib>=0.8.1
         return virtual_env_section
 
     def about_profiles(self) -> str:
-        virtual_env_section = self._get_virtual_env_section()
-        
         docs = f"""
 # RudderStack Profiles Quick Start Guide
 
@@ -334,11 +332,14 @@ pb run --begin_time '2024-11-01T00:00:00Z'
 6. **PREFER** simple solutions over complex ones
 7. **VERIFY** all column names exist before using them
 8. **USE** current year (2025) in all date references
-        """.format(virtual_env_section=virtual_env_section)
+
+        """
         return docs
 
     def about_pb_cli(self) -> str:
-        docs = """
+        virtual_env_section = self._get_virtual_env_section()
+        
+        docs = f"""
 # Profile Builder CLI Commands
 
 The Profile Builder (pb) CLI supports various commands to help you manage your customer profiles project.
