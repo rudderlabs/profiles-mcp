@@ -440,62 +440,66 @@ class ProfilesTools:
         if not pip_executable:
             return {"status": "failure", "messages": messages, "errors": errors}
 
+        readme_content = ''
+        readme_writestatus_msg = ''
         # Check if running in kubernetes pod
         if is_cloud_based_environment():
             messages.append("Kubernetes pod detected - skipping virtual environment creation")
-            return self._setup_cloud_based_project(abs_project_path, messages)
+            resp = self._setup_cloud_based_project(abs_project_path, messages)
+            readme_content = resp["readme_content"]
+            readme_writestatus_msg = resp["message"]
+        else: 
+            venv_path = os.path.join(abs_project_path, ".venv")
+            venv_bin_dir = os.path.join(venv_path, "bin" if os.name != "nt" else "Scripts")
 
-        venv_path = os.path.join(abs_project_path, ".venv")
-        venv_bin_dir = os.path.join(venv_path, "bin" if os.name != "nt" else "Scripts")
+            # Check for pip3 first, fall back to pip if pip3 is not available
+            venv_pip3 = os.path.join(venv_bin_dir, "pip3")
+            venv_pip = os.path.join(venv_bin_dir, "pip")
+            venv_pip_to_use = venv_pip3 if os.path.exists(venv_pip3) else venv_pip
+            venv_pb = os.path.join(venv_bin_dir, "pb")
 
-        # Check for pip3 first, fall back to pip if pip3 is not available
-        venv_pip3 = os.path.join(venv_bin_dir, "pip3")
-        venv_pip = os.path.join(venv_bin_dir, "pip")
-        venv_pip_to_use = venv_pip3 if os.path.exists(venv_pip3) else venv_pip
-        venv_pb = os.path.join(venv_bin_dir, "pb")
+            commands_to_execute = [
+                {
+                    "cmd": [python_executable, "-m", "venv", ".venv"],
+                    "desc": "Create virtual environment (.venv)",
+                    "success_message": "Virtual environment '.venv' created",
+                    "skip_message": f"Virtual environment '.venv' already exists at '{venv_path}'",
+                    "pre_check": lambda: os.path.isdir(venv_path),
+                },
+                {
+                    "cmd": [venv_pip_to_use, "install", "profiles-rudderstack"],
+                    "desc": "Install 'profiles-rudderstack' package using pip",
+                    "success_message": "Package 'profiles-rudderstack' installed in the virtual environment",
+                    "pre_check": lambda: os.path.exists(venv_pb),
+                    "skip_message": f"Package 'profiles-rudderstack' already installed in the virtual environment at '{venv_pb}'",
+                },
+                {
+                    "cmd": [venv_pip_to_use, "install", "profiles-mlcorelib"],
+                    "desc": "Install 'profiles-mlcorelib' package using pip",
+                    "success_message": "Package 'profiles-mlcorelib' installed in the virtual environment",
+                    "pre_check": lambda: self._check_package_installed(venv_bin_dir, "profiles_mlcorelib"),
+                    "skip_message": f"Package 'profiles-mlcorelib' already installed in the virtual environment",
+                },
 
-        commands_to_execute = [
-            {
-                "cmd": [python_executable, "-m", "venv", ".venv"],
-                "desc": "Create virtual environment (.venv)",
-                "success_message": "Virtual environment '.venv' created",
-                "skip_message": f"Virtual environment '.venv' already exists at '{venv_path}'",
-                "pre_check": lambda: os.path.isdir(venv_path),
-            },
-            {
-                "cmd": [venv_pip_to_use, "install", "profiles-rudderstack"],
-                "desc": "Install 'profiles-rudderstack' package using pip",
-                "success_message": "Package 'profiles-rudderstack' installed in the virtual environment",
-                "pre_check": lambda: os.path.exists(venv_pb),
-                "skip_message": f"Package 'profiles-rudderstack' already installed in the virtual environment at '{venv_pb}'",
-            },
-            {
-                "cmd": [venv_pip_to_use, "install", "profiles-mlcorelib"],
-                "desc": "Install 'profiles-mlcorelib' package using pip",
-                "success_message": "Package 'profiles-mlcorelib' installed in the virtual environment",
-                "pre_check": lambda: self._check_package_installed(venv_bin_dir, "profiles_mlcorelib"),
-                "skip_message": f"Package 'profiles-mlcorelib' already installed in the virtual environment",
-            },
+            ]
 
-        ]
+            for item in commands_to_execute:
+                pre_check = item.get("pre_check")
+                logger.info(f"Pre-check: {pre_check}")
+                if pre_check and pre_check():
+                    logger.info(f"Pre-check passed for command: {item['cmd']}")
+                    messages.append(
+                        item.get("skip_message", "Step skipped due to pre-check.")
+                    )
+                    continue
+                if not run_command(item["cmd"], abs_project_path, item["desc"]):
+                    return {"status": "failure", "messages": messages, "errors": errors}
+                if "success_message" in item:
+                    messages.append(item["success_message"])
 
-        for item in commands_to_execute:
-            pre_check = item.get("pre_check")
-            logger.info(f"Pre-check: {pre_check}")
-            if pre_check and pre_check():
-                logger.info(f"Pre-check passed for command: {item['cmd']}")
-                messages.append(
-                    item.get("skip_message", "Step skipped due to pre-check.")
-                )
-                continue
-            if not run_command(item["cmd"], abs_project_path, item["desc"]):
-                return {"status": "failure", "messages": messages, "errors": errors}
-            if "success_message" in item:
-                messages.append(item["success_message"])
-
-        # Create README.md file with activation instructions
-        readme_path = os.path.join(abs_project_path, "README.md")
-        readme_content = """# RudderStack Profiles Project
+            # Create README.md file with activation instructions
+            readme_path = os.path.join(abs_project_path, "README.md")
+            readme_content = """# RudderStack Profiles Project
 
 ## Environment Setup
 
@@ -538,17 +542,18 @@ After activating the environment, you can:
 
 For more information, refer to the RudderStack Profiles documentation.
 """
+            readme_writestatus_msg = "Created README.md with environment activation instructions"
 
         try:
             with open(readme_path, "w") as f:
                 f.write(readme_content)
-            messages.append("Created README.md with environment activation instructions")
+            messages.append(readme_writestatus_msg)
         except Exception as e:
             errors.append(f"Error creating README.md file: {e}")
 
         return {
             "status": "success",
-            "summary": "Project setup complete with pip and venv",
+            "summary": "Project setup complete",
             "messages": messages,
             "errors": [],
         }
@@ -567,10 +572,7 @@ For more information, refer to the RudderStack Profiles documentation.
 
     def _setup_cloud_based_project(self, project_path: str, messages: list) -> dict:
         """Setup project for kubernetes pod (no virtual environment needed)."""
-        errors = []
 
-        # Create README.md file with cloud-specific instructions
-        readme_path = os.path.join(project_path, "README.md")
         readme_content = """# RudderStack Profiles Project (Kubernetes Pod Environment)
 
 ## Environment Setup
@@ -606,18 +608,9 @@ You can directly start using Profiles commands with the `pb` CLI tool:
 For more information, refer to the RudderStack Profiles documentation.
 """
 
-        try:
-            with open(readme_path, "w") as f:
-                f.write(readme_content)
-            messages.append("Created README.md with cloud environment instructions")
-        except Exception as e:
-            errors.append(f"Error creating README.md file: {e}")
-
         return {
-            "status": "success",
-            "summary": "Project setup complete for kubernetes pod",
-            "messages": messages,
-            "errors": [],
+            "readme_content": readme_content,
+            "message": "Created README.md with cloud environment instructions",
         }
 
     def workflow_guide(self, user_goal: str, current_action: str = "start", user_confirmed_tables: str = "", user_confirmed_connection: str = "", knowledge_phase_completed: str = "") -> dict:

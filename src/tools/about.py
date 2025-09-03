@@ -72,7 +72,7 @@ pip install profiles-mlcorelib>=0.8.1
         return virtual_env_section
 
     def about_profiles(self) -> str:
-        docs = f"""
+        docs = """
 # RudderStack Profiles Quick Start Guide
 
 RudderStack Profiles is a customer data unification platform that runs natively in your Snowflake warehouse. It helps you:
