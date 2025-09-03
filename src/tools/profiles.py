@@ -5,10 +5,10 @@ import subprocess
 import json
 import re
 import glob
-from pathlib import Path
 import datetime
 from logger import setup_logger
 from constants import PB_SITE_CONFIG_PATH
+from utils.environment import is_cloud_based_environment
 
 
 logger = setup_logger(__name__)
@@ -340,8 +340,8 @@ class ProfilesTools:
         Steps:
         1. Ensure the project directory exists.
         2. Verify Python 3.10 is installed.
-        3. Create a Python virtual environment.
-        4. Install the profiles-rudderstack package using pip.
+        3. Create a Python virtual environment (unless running in kubernetes pod environment).
+        4. Install the profiles-rudderstack package using pip (unless running in kubernetes pod).
         5. Return a status dict with messages and errors.
         """
         messages = []
@@ -440,57 +440,65 @@ class ProfilesTools:
         if not pip_executable:
             return {"status": "failure", "messages": messages, "errors": errors}
 
-        venv_path = os.path.join(abs_project_path, ".venv")
-        venv_bin_dir = os.path.join(venv_path, "bin" if os.name != "nt" else "Scripts")
-
-        # Check for pip3 first, fall back to pip if pip3 is not available
-        venv_pip3 = os.path.join(venv_bin_dir, "pip3")
-        venv_pip = os.path.join(venv_bin_dir, "pip")
-        venv_pip_to_use = venv_pip3 if os.path.exists(venv_pip3) else venv_pip
-        venv_pb = os.path.join(venv_bin_dir, "pb")
-
-        commands_to_execute = [
-            {
-                "cmd": [python_executable, "-m", "venv", ".venv"],
-                "desc": "Create virtual environment (.venv)",
-                "success_message": "Virtual environment '.venv' created",
-                "skip_message": f"Virtual environment '.venv' already exists at '{venv_path}'",
-                "pre_check": lambda: os.path.isdir(venv_path),
-            },
-            {
-                "cmd": [venv_pip_to_use, "install", "profiles-rudderstack"],
-                "desc": "Install 'profiles-rudderstack' package using pip",
-                "success_message": "Package 'profiles-rudderstack' installed in the virtual environment",
-                "pre_check": lambda: os.path.exists(venv_pb),
-                "skip_message": f"Package 'profiles-rudderstack' already installed in the virtual environment at '{venv_pb}'",
-            },
-            {
-                "cmd": [venv_pip_to_use, "install", "profiles-mlcorelib"],
-                "desc": "Install 'profiles-mlcorelib' package using pip",
-                "success_message": "Package 'profiles-mlcorelib' installed in the virtual environment",
-                "pre_check": lambda: self._check_package_installed(venv_bin_dir, "profiles_mlcorelib"),
-                "skip_message": f"Package 'profiles-mlcorelib' already installed in the virtual environment",
-            },
-
-        ]
-
-        for item in commands_to_execute:
-            pre_check = item.get("pre_check")
-            logger.info(f"Pre-check: {pre_check}")
-            if pre_check and pre_check():
-                logger.info(f"Pre-check passed for command: {item['cmd']}")
-                messages.append(
-                    item.get("skip_message", "Step skipped due to pre-check.")
-                )
-                continue
-            if not run_command(item["cmd"], abs_project_path, item["desc"]):
-                return {"status": "failure", "messages": messages, "errors": errors}
-            if "success_message" in item:
-                messages.append(item["success_message"])
-
-        # Create README.md file with activation instructions
         readme_path = os.path.join(abs_project_path, "README.md")
-        readme_content = """# RudderStack Profiles Project
+        readme_content = ''
+        readme_writestatus_msg = ''
+        # Check if running in kubernetes pod
+        if is_cloud_based_environment():
+            messages.append("Kubernetes pod detected - skipping virtual environment creation")
+            resp = self._setup_cloud_based_project(abs_project_path, messages)
+            readme_content = resp["readme_content"]
+            readme_writestatus_msg = resp["message"]
+        else: 
+            venv_path = os.path.join(abs_project_path, ".venv")
+            venv_bin_dir = os.path.join(venv_path, "bin" if os.name != "nt" else "Scripts")
+
+            # Check for pip3 first, fall back to pip if pip3 is not available
+            venv_pip3 = os.path.join(venv_bin_dir, "pip3")
+            venv_pip = os.path.join(venv_bin_dir, "pip")
+            venv_pip_to_use = venv_pip3 if os.path.exists(venv_pip3) else venv_pip
+            venv_pb = os.path.join(venv_bin_dir, "pb")
+
+            commands_to_execute = [
+                {
+                    "cmd": [python_executable, "-m", "venv", ".venv"],
+                    "desc": "Create virtual environment (.venv)",
+                    "success_message": "Virtual environment '.venv' created",
+                    "skip_message": f"Virtual environment '.venv' already exists at '{venv_path}'",
+                    "pre_check": lambda: os.path.isdir(venv_path),
+                },
+                {
+                    "cmd": [venv_pip_to_use, "install", "profiles-rudderstack"],
+                    "desc": "Install 'profiles-rudderstack' package using pip",
+                    "success_message": "Package 'profiles-rudderstack' installed in the virtual environment",
+                    "pre_check": lambda: os.path.exists(venv_pb),
+                    "skip_message": f"Package 'profiles-rudderstack' already installed in the virtual environment at '{venv_pb}'",
+                },
+                {
+                    "cmd": [venv_pip_to_use, "install", "profiles-mlcorelib"],
+                    "desc": "Install 'profiles-mlcorelib' package using pip",
+                    "success_message": "Package 'profiles-mlcorelib' installed in the virtual environment",
+                    "pre_check": lambda: self._check_package_installed(venv_bin_dir, "profiles_mlcorelib"),
+                    "skip_message": f"Package 'profiles-mlcorelib' already installed in the virtual environment",
+                },
+
+            ]
+
+            for item in commands_to_execute:
+                pre_check = item.get("pre_check")
+                logger.info(f"Pre-check: {pre_check}")
+                if pre_check and pre_check():
+                    logger.info(f"Pre-check passed for command: {item['cmd']}")
+                    messages.append(
+                        item.get("skip_message", "Step skipped due to pre-check.")
+                    )
+                    continue
+                if not run_command(item["cmd"], abs_project_path, item["desc"]):
+                    return {"status": "failure", "messages": messages, "errors": errors}
+                if "success_message" in item:
+                    messages.append(item["success_message"])
+
+            readme_content = """# RudderStack Profiles Project
 
 ## Environment Setup
 
@@ -533,19 +541,21 @@ After activating the environment, you can:
 
 For more information, refer to the RudderStack Profiles documentation.
 """
+            readme_writestatus_msg = "Created README.md with environment activation instructions"
 
         try:
+            # Create README.md file with instructions
             with open(readme_path, "w") as f:
                 f.write(readme_content)
-            messages.append("Created README.md with environment activation instructions")
+            messages.append(readme_writestatus_msg)
         except Exception as e:
             errors.append(f"Error creating README.md file: {e}")
 
         return {
             "status": "success",
-            "summary": "Project setup complete with pip and venv",
+            "summary": "Project setup complete",
             "messages": messages,
-            "errors": [],
+            "errors": errors,
         }
 
     def _check_package_installed(self, venv_bin_dir: str, package_name: str) -> bool:
@@ -558,6 +568,50 @@ For more information, refer to the RudderStack Profiles documentation.
             return result.returncode == 0
         except Exception:
             return False
+
+
+    def _setup_cloud_based_project(self, project_path: str, messages: list) -> dict:
+        """Setup project for kubernetes pod (no virtual environment needed)."""
+
+        readme_content = """# RudderStack Profiles Project (Kubernetes Pod Environment)
+
+## Environment Setup
+
+This project is configured for a kubernetes pod environment where Python packages are pre-installed.
+
+### Running in Kubernetes Pod Environment
+
+Since you're running in a kubernetes pod, the required Python packages 
+(profiles-rudderstack, profiles-mlcorelib) should already be available in your container.
+
+## Getting Started
+
+You can directly start using Profiles commands with the `pb` CLI tool:
+
+1. Initialize a new connection:
+
+   ```
+   pb init connection
+   ```
+
+   or
+
+   use initialize_snowflake_connection() tool to create a new connection
+
+2. Create your project configuration files (pb_project.yaml, inputs.yaml, models.yaml)
+
+3. Run your profiles project:
+   ```
+   pb run
+   ```
+
+For more information, refer to the RudderStack Profiles documentation.
+"""
+
+        return {
+            "readme_content": readme_content,
+            "message": "Created README.md with cloud environment instructions",
+        }
 
     def workflow_guide(self, user_goal: str, current_action: str = "start", user_confirmed_tables: str = "", user_confirmed_connection: str = "", knowledge_phase_completed: str = "") -> dict:
         """
