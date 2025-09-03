@@ -51,10 +51,10 @@ class About:
     def _get_virtual_env_section(self) -> str:
         """Generate virtual environment setup section based on environment."""
         if is_cloud_based_environment():
-            virtual_env_section = """### 1. Kubernetes Pod Environment Setup
+            virtual_env_section = """### 1. No virtual environment setup required
 
-Since you're running in a Kubernetes pod environment, the required Python packages
-(profiles-rudderstack, profiles-mlcorelib) should already be available in your container.
+The required Python packages
+(profiles-rudderstack, profiles-mlcorelib) should already be available.
 
 **No virtual environment setup required** - you can directly use the `pb` CLI tool."""
         else:

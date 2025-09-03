@@ -440,6 +440,7 @@ class ProfilesTools:
         if not pip_executable:
             return {"status": "failure", "messages": messages, "errors": errors}
 
+        readme_path = os.path.join(abs_project_path, "README.md")
         readme_content = ''
         readme_writestatus_msg = ''
         # Check if running in kubernetes pod
@@ -497,8 +498,6 @@ class ProfilesTools:
                 if "success_message" in item:
                     messages.append(item["success_message"])
 
-            # Create README.md file with activation instructions
-            readme_path = os.path.join(abs_project_path, "README.md")
             readme_content = """# RudderStack Profiles Project
 
 ## Environment Setup
@@ -545,6 +544,7 @@ For more information, refer to the RudderStack Profiles documentation.
             readme_writestatus_msg = "Created README.md with environment activation instructions"
 
         try:
+            # Create README.md file with instructions
             with open(readme_path, "w") as f:
                 f.write(readme_content)
             messages.append(readme_writestatus_msg)
@@ -555,7 +555,7 @@ For more information, refer to the RudderStack Profiles documentation.
             "status": "success",
             "summary": "Project setup complete",
             "messages": messages,
-            "errors": [],
+            "errors": errors,
         }
 
     def _check_package_installed(self, venv_bin_dir: str, package_name: str) -> bool:
