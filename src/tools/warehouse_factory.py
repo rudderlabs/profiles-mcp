@@ -1,8 +1,9 @@
-from typing import Optional
+from typing import Optional, Type
+
 from logger import setup_logger
-from tools.warehouse_base import BaseWarehouse
-from tools.snowflake import Snowflake
 from tools.bigquery import BigQuery
+from tools.snowflake import Snowflake
+from tools.warehouse_base import BaseWarehouse
 
 logger = setup_logger(__name__)
 
@@ -72,7 +73,7 @@ class WarehouseFactory:
         return warehouse_type.lower() in cls._warehouse_classes
 
     @classmethod
-    def register_warehouse(cls, warehouse_type: str, warehouse_class: type) -> None:
+    def register_warehouse(cls, warehouse_type: str, warehouse_class: Type[BaseWarehouse]) -> None:
         """
         Register a new warehouse type with the factory.
 
