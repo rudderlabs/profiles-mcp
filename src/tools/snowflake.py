@@ -109,7 +109,7 @@ class Snowflake(BaseWarehouse):
 
         if self.session is None:
             raise Exception(
-                "Session is not initialized. Call initialize_snowflake_connection() mcp tool first."
+                "Session is not initialized. Call initialize_warehouse_connection() mcp tool first."
             )
 
         try:

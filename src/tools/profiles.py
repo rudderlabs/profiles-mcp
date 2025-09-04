@@ -1,15 +1,15 @@
+import datetime
+import glob
+import json
 import os
-import yaml
+import re
 import shutil
 import subprocess
-import json
-import re
-import glob
-import datetime
-from logger import setup_logger
-from constants import PB_SITE_CONFIG_PATH
-from utils.environment import is_cloud_based_environment
 
+import yaml
+from constants import PB_SITE_CONFIG_PATH
+from logger import setup_logger
+from utils.environment import is_cloud_based_environment
 
 logger = setup_logger(__name__)
 
@@ -486,17 +486,21 @@ class ProfilesTools:
             return {"status": "failure", "messages": messages, "errors": errors}
 
         readme_path = os.path.join(abs_project_path, "README.md")
-        readme_content = ''
-        readme_writestatus_msg = ''
+        readme_content = ""
+        readme_writestatus_msg = ""
         # Check if running in kubernetes pod
         if is_cloud_based_environment():
-            messages.append("Kubernetes pod detected - skipping virtual environment creation")
+            messages.append(
+                "Kubernetes pod detected - skipping virtual environment creation"
+            )
             resp = self._setup_cloud_based_project(abs_project_path, messages)
             readme_content = resp["readme_content"]
             readme_writestatus_msg = resp["message"]
-        else: 
+        else:
             venv_path = os.path.join(abs_project_path, ".venv")
-            venv_bin_dir = os.path.join(venv_path, "bin" if os.name != "nt" else "Scripts")
+            venv_bin_dir = os.path.join(
+                venv_path, "bin" if os.name != "nt" else "Scripts"
+            )
 
             # Check for pip3 first, fall back to pip if pip3 is not available
             venv_pip3 = os.path.join(venv_bin_dir, "pip3")
@@ -523,10 +527,11 @@ class ProfilesTools:
                     "cmd": [venv_pip_to_use, "install", "profiles-mlcorelib"],
                     "desc": "Install 'profiles-mlcorelib' package using pip",
                     "success_message": "Package 'profiles-mlcorelib' installed in the virtual environment",
-                    "pre_check": lambda: self._check_package_installed(venv_bin_dir, "profiles_mlcorelib"),
+                    "pre_check": lambda: self._check_package_installed(
+                        venv_bin_dir, "profiles_mlcorelib"
+                    ),
                     "skip_message": f"Package 'profiles-mlcorelib' already installed in the virtual environment",
                 },
-
             ]
 
             for item in commands_to_execute:
@@ -586,7 +591,9 @@ After activating the environment, you can:
 
 For more information, refer to the RudderStack Profiles documentation.
 """
-            readme_writestatus_msg = "Created README.md with environment activation instructions"
+            readme_writestatus_msg = (
+                "Created README.md with environment activation instructions"
+            )
 
         try:
             # Create README.md file with instructions
@@ -613,7 +620,6 @@ For more information, refer to the RudderStack Profiles documentation.
             return result.returncode == 0
         except Exception:
             return False
-
 
     def _setup_cloud_based_project(self, project_path: str, messages: list) -> dict:
         """Setup project for kubernetes pod (no virtual environment needed)."""
@@ -1322,7 +1328,7 @@ For more information, refer to the RudderStack Profiles documentation.
         return {"valid": True}
 
     def validate_propensity_model_config(
-        self, project_path: str, model_name: str, snowflake_client
+        self, project_path: str, model_name: str, warehouse_client
     ) -> dict:
         """
         Validates propensity model configuration for common pitfalls.
@@ -1334,12 +1340,12 @@ For more information, refer to the RudderStack Profiles documentation.
         Args:
             project_path: Path to the profiles project directory
             model_name: Name of the propensity model to validate
-            snowflake_client: Snowflake client for data validation queries
+            warehouse_client: Warehouse client for data validation queries
 
         Returns:
             dict: Structured validation results with errors, warnings, and suggestions
         """
-        validator = PropensityValidator(project_path, model_name, snowflake_client)
+        validator = PropensityValidator(project_path, model_name, warehouse_client)
         return validator.validate()
 
     def fetch_warehouse_credentials(self, connection_name: str) -> dict:
@@ -1374,7 +1380,7 @@ For more information, refer to the RudderStack Profiles documentation.
             target = existing_connection.get("target", "dev")
             output_config = existing_connection["outputs"][target]
 
-            warehouse_type = output_config.get("type", "snowflake").lower()
+            warehouse_type = output_config.get("type", "unknown").lower()
 
             # Base connection details common to all warehouse types
             connection_details = {
@@ -1449,11 +1455,11 @@ class PropensityValidator:
     with clear separation of concerns and extensible validation rules.
     """
 
-    def __init__(self, project_path: str, model_name: str, snowflake_client):
-        """Initialize the validator with optional logger."""
+    def __init__(self, project_path: str, model_name: str, warehouse_client):
+        """Initialize the validator with warehouse client."""
         self.project_path = project_path
         self.model_name = model_name
-        self.snowflake_client = snowflake_client
+        self.warehouse_client = warehouse_client
 
     def validate(self) -> dict:
         """
@@ -1462,7 +1468,7 @@ class PropensityValidator:
         Args:
             project_path: Path to the profiles project directory
             model_name: Name of the propensity model to validate
-            snowflake_client: Snowflake client for data validation queries
+            warehouse_client: Warehouse client for data validation queries
 
         Returns:
             dict: Structured validation results with errors, warnings, and suggestions
@@ -1793,17 +1799,29 @@ class PropensityValidator:
             return
 
         try:
+            # Use warehouse-independent date difference calculation
+            warehouse_type = getattr(self.warehouse_client, "warehouse_type", "unknown")
+
+            if warehouse_type.lower() == "bigquery":
+                # BigQuery syntax for date difference
+                date_diff_expr = f"DATE_DIFF(DATE(MAX({occurred_at_col})), DATE(MIN({occurred_at_col})), DAY)"
+            else:
+                # Snowflake and other warehouses (default)
+                date_diff_expr = (
+                    f"DATEDIFF(day, MIN({occurred_at_col}), MAX({occurred_at_col}))"
+                )
+
             query = f"""
             SELECT
                 MIN({occurred_at_col}) as min_date,
                 MAX({occurred_at_col}) as max_date,
-                DATEDIFF(day, MIN({occurred_at_col}), MAX({occurred_at_col})) as date_range_days,
+                {date_diff_expr} as date_range_days,
                 COUNT(*) as total_rows
             FROM {db_table_name}
             WHERE {occurred_at_col} IS NOT NULL
             """
 
-            stats_result = self.snowflake_client.raw_query(
+            stats_result = self.warehouse_client.raw_query(
                 query, response_type="pandas"
             )
             logger.debug(f"Stats result: {db_table_name}, {stats_result}")

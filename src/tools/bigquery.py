@@ -72,7 +72,7 @@ class BigQuery(BaseWarehouse):
         """Ensure we have a valid BigQuery client."""
         if self.client is None:
             raise Exception(
-                "BigQuery client is not initialized. Call initialize_connection() first."
+                "Session is not initialized. Call initialize_warehouse_connection() mcp tool first."
             )
 
         try:
