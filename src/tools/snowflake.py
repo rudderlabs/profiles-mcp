@@ -5,6 +5,7 @@ import os
 from logger import setup_logger
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from cryptography.hazmat.backends import default_backend
+from dateutil.parser import parse
 
 logger = setup_logger(__name__)
 
@@ -272,4 +273,204 @@ class Snowflake:
             message = f"Failed to evaluate eligible user filters: {str(e)}"
             logger.error(message)
             raise Exception(message)
+
+    def suggest_optimal_pilot_dates(self, input_tables: list[str], target_duration_days: int = 7) -> dict:
+        """
+        Intelligently suggests optimal begin_time and end_time for pilot/dry runs to achieve fast execution.
+        
+        This method replaces arbitrary date selection with data-driven analysis to find the minimum 
+        date range required for a successful and fast profiles run. It analyzes actual data patterns
+        in your input tables to recommend optimal test periods.
+
+        Args:
+            input_tables: List of fully qualified table names (e.g., ["DB.SCHEMA.TABLE1", "DB.SCHEMA.TABLE2"])
+            target_duration_days: Desired test duration in days (default: 7 for weekly patterns)
+                                 - 1-3 days: Ultra-fast testing
+                                 - 7 days: Recommended for most cases  
+                                 - 14+ days: Comprehensive testing
+
+        Returns:
+            dict: Comprehensive analysis with suggested date ranges containing:
+                - recommended: Primary recommendation with begin_time and end_time
+                - alternatives: List of alternative options (conservative, extended)
+                - analysis: Detailed analysis of data patterns and reasoning
+                - warnings: Any issues found during analysis
+                - success: Boolean indicating if analysis succeeded
+        """
+        try:
+            logger.info(f"Analyzing input tables for optimal pilot dates: {input_tables}")
+            self.ensure_valid_session()
+
+            if not input_tables:
+                return {
+                    "success": False,
+                    "error": "No input tables provided",
+                    "recommended": None,
+                    "alternatives": [],
+                    "analysis": {},
+                    "warnings": ["No input tables provided for analysis"]
+                }
+
+            max_timestamps = []
+            table_analysis = {}
+            warnings = []
+
+            # Common timestamp column names to check
+            timestamp_columns = [
+                'timestamp', 'sent_at', 'received_at', 'created_at', 'updated_at', 
+                'event_time', 'occurred_at', 'original_timestamp', 'loaded_at'
+            ]
+
+            for table in input_tables:
+                try:
+                    # Get table schema to find timestamp columns
+                    parts = table.split('.')
+                    if len(parts) != 3:
+                        warnings.append(f"Invalid table format '{table}'. Expected format: DATABASE.SCHEMA.TABLE")
+                        continue
+                    
+                    database, schema, table_name = parts
+                    table_columns = self.describe_table(database, schema, table_name)
+                    
+                    # Find timestamp columns in this table
+                    found_timestamp_cols = []
+                    for col_info in table_columns:
+                        col_name = col_info.split(':')[0].strip().lower()
+                        col_type = col_info.split(':')[1].strip().lower()
+                        
+                        if col_name in timestamp_columns or 'timestamp' in col_type:
+                            found_timestamp_cols.append(col_name)
+
+                    if not found_timestamp_cols:
+                        warnings.append(f"No timestamp columns found in table '{table}'")
+                        continue
+
+                    # Query max timestamp for each found column
+                    table_max_timestamps = []
+                    for col in found_timestamp_cols:
+                        try:
+                            query = f"SELECT MAX({col}) as max_ts FROM {table} WHERE {col} IS NOT NULL"
+                            result = self.raw_query(query)
+                            
+                            if result and result[0]['MAX_TS']:
+                                table_max_timestamps.append({
+                                    'column': col,
+                                    'max_timestamp': result[0]['MAX_TS'],
+                                    'table': table
+                                })
+                        except Exception as e:
+                            warnings.append(f"Failed to query {col} from {table}: {str(e)}")
+
+                    if table_max_timestamps:
+                        # Get the most recent timestamp from this table
+                        latest_in_table = max(table_max_timestamps, key=lambda x: x['max_timestamp'])
+                        max_timestamps.append(latest_in_table)
+                        table_analysis[table] = {
+                            'timestamp_columns': found_timestamp_cols,
+                            'latest_timestamp': latest_in_table['max_timestamp'],
+                            'latest_column': latest_in_table['column']
+                        }
+                    else:
+                        warnings.append(f"No valid timestamp data found in table '{table}'")
+
+                except Exception as e:
+                    warnings.append(f"Error analyzing table '{table}': {str(e)}")
+
+            if not max_timestamps:
+                return {
+                    "success": False,
+                    "error": "No valid timestamp data found in any input tables",
+                    "recommended": None,
+                    "alternatives": [],
+                    "analysis": table_analysis,
+                    "warnings": warnings
+                }
+
+            # Find the overall maximum timestamp across all tables
+            overall_max = max(max_timestamps, key=lambda x: x['max_timestamp'])
+            max_timestamp = overall_max['max_timestamp']
+            
+            # Convert to datetime if it's a string
+            if isinstance(max_timestamp, str):
+                max_timestamp = parse(max_timestamp)
+
+            # Calculate suggested date ranges
+            end_time = max_timestamp
+            begin_time = end_time - timedelta(days=target_duration_days)
+            
+            # Format timestamps for profiles usage (ISO format with timezone)
+            begin_time_str = begin_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+            end_time_str = end_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+            # Generate alternative options
+            alternatives = []
+            
+            # Conservative option (1 day)
+            if target_duration_days > 1:
+                conservative_begin = end_time - timedelta(days=1)
+                alternatives.append({
+                    "name": "conservative",
+                    "duration_days": 1,
+                    "begin_time": conservative_begin.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    "end_time": end_time_str,
+                    "rationale": "Ultra-fast execution with minimal data for quick validation"
+                })
+
+            # Extended option (14 days)
+            if target_duration_days < 14:
+                extended_begin = end_time - timedelta(days=14)
+                alternatives.append({
+                    "name": "extended",
+                    "duration_days": 14,
+                    "begin_time": extended_begin.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    "end_time": end_time_str,
+                    "rationale": "More comprehensive testing with broader data coverage"
+                })
+
+            # Calculate data freshness
+            days_since_last_data = (datetime.now() - max_timestamp).days
+            freshness_warning = None
+            if days_since_last_data > 7:
+                freshness_warning = f"Latest data is {days_since_last_data} days old. Consider checking if data pipeline is current."
+
+            analysis = {
+                "overall_max_timestamp": max_timestamp.isoformat(),
+                "days_since_last_data": days_since_last_data,
+                "target_duration_days": target_duration_days,
+                "tables_analyzed": len(input_tables),
+                "tables_with_data": len(table_analysis),
+                "data_freshness": "current" if days_since_last_data <= 1 else "stale" if days_since_last_data > 7 else "recent"
+            }
+
+            if freshness_warning:
+                warnings.append(freshness_warning)
+
+            recommended = {
+                "begin_time": begin_time_str,
+                "end_time": end_time_str,
+                "duration_days": target_duration_days,
+                "rationale": f"Using last {target_duration_days} days of data ending at {end_time_str} for optimal balance of speed and data coverage",
+                "confidence": "high" if days_since_last_data <= 1 else "medium" if days_since_last_data <= 7 else "low"
+            }
+
+            return {
+                "success": True,
+                "recommended": recommended,
+                "alternatives": alternatives,
+                "analysis": analysis,
+                "table_details": table_analysis,
+                "warnings": warnings
+            }
+
+        except Exception as e:
+            error_message = f"Failed to suggest optimal pilot dates: {str(e)}"
+            logger.error(error_message)
+            return {
+                "success": False,
+                "error": error_message,
+                "recommended": None,
+                "alternatives": [],
+                "analysis": {},
+                "warnings": [error_message]
+            }
 
