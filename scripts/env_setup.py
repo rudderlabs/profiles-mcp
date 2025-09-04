@@ -9,6 +9,9 @@ ENV_GROUPS = OrderedDict([
     ("RUDDERSTACK", [
         {"name": "RUDDERSTACK_PAT", "required": True, "secret": True, "help": "Your RudderStack personal access token"},
     ]),
+    ("ENVIRONMENT", [
+        {"name": "IS_CLOUD_BASED", "required": False, "secret": False, "help": "Set to 'true' if running in kubernetes pod environment (skips virtual environment creation)", "default": "false"},
+    ]),
 ])
 
 def read_env_file(path):
@@ -69,6 +72,23 @@ def main():
                 help_text=var_meta.get("help"),
                 required=var_meta.get("required", True)
             )
+
+    # Prompt for Environment variables
+    for var_meta in ENV_GROUPS["ENVIRONMENT"]:
+        var = var_meta["name"]
+        # Set default value if not present
+        if var not in values:
+            default_value = var_meta.get("default", "")
+            if not env_exists or var not in env:
+                values[var] = prompt_var(
+                    var,
+                    current=default_value,
+                    secret=var_meta.get("secret", False),
+                    help_text=var_meta.get("help"),
+                    required=var_meta.get("required", True)
+                )
+            else:
+                values[var] = env.get(var, default_value)
 
     # Write to .env
     print("\nWriting values to .env...")
