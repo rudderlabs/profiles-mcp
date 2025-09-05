@@ -28,7 +28,7 @@ class BaseWarehouse(ABC):
 
     This class defines the standard interface that all warehouse implementations
     must follow to ensure consistent behavior across different warehouse types
-    (Snowflake, BigQuery, Redshift, etc.).
+    (Snowflake, BigQuery, etc.).
     """
 
     def __init__(self):

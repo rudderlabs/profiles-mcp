@@ -1,11 +1,9 @@
-from datetime import datetime
-from typing import Union, List, Dict, Any
+from typing import Union, List, Dict
+
 import pandas as pd
+from google.auth import default
 from google.cloud import bigquery
 from google.oauth2 import service_account
-from google.auth import default
-import json
-import os
 from logger import setup_logger
 from tools.warehouse_base import BaseWarehouse, WarehouseConnectionDetails
 
@@ -113,7 +111,7 @@ class BigQuery(BaseWarehouse):
             elif response_type == "pandas":
                 try:
                     df = query_job.to_dataframe()
-                    # Fill NaN values with 'Null' for object columns (consistent with Snowflake)
+                    # Fill NaN values with 'Null' for object columns (consistent across different warehouses)
                     for col in df.columns:
                         if df[col].dtype == "object":
                             df[col] = df[col].fillna("Null")
@@ -139,7 +137,7 @@ class BigQuery(BaseWarehouse):
             table_ref = f"{database}.{schema}.{table}"
             table_obj = self.client.get_table(table_ref)
 
-            # Format schema information similar to Snowflake output
+            # Format schema information similar to other warehouse output
             result = []
             for field in table_obj.schema:
                 field_info = f"{field.name}: {field.field_type}"

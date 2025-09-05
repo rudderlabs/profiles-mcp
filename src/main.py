@@ -41,8 +41,13 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
         yield app_context
     finally:
         # Clean up warehouse connections
+        logger.info("Starting application cleanup...")
         if hasattr(app_context, "warehouse_manager"):
+            logger.info("Closing all warehouse connections...")
             app_context.warehouse_manager.close_all_warehouses()
+            logger.info("Application cleanup completed successfully")
+        else:
+            logger.warning("No warehouse manager found during cleanup")
 
 
 mcp = FastMCP(

@@ -75,11 +75,11 @@ pip install profiles-mlcorelib>=0.8.1
         docs = """
 # RudderStack Profiles Quick Start Guide
 
-RudderStack Profiles is a customer data unification platform that runs natively in your Snowflake warehouse. It helps you:
+RudderStack Profiles is a customer data unification platform that runs natively in your warehouse. It helps you:
 - Create unified customer profiles by automatically stitching identifiers
 - Build and maintain customer 360° views with minimal engineering
 - Generate customer features from multiple data sources
-- Keep all processing within your Snowflake environment
+- Keep all processing within your warehouse environment
 
 ## 🚨 **MANDATORY: Start Here First**
 
@@ -105,7 +105,7 @@ profiles_workflow_guide(
    AND
    get_existing_connections()  # For getting connections from a pre-existing siteconfig file.
    IF no connections exist:
-   initialize_snowflake_connection()  # Create new connection programmatically
+   initialize_warehouse_connection()  # Create new connection programmatically
 ```
 
 ### **Phase 3: Data Discovery** ⚠️ *NEVER SKIP - REQUIRED FOR REAL DATA*
@@ -253,7 +253,7 @@ your-profiles-project/
 - `about_profiles(topic="propensity")`: Understand how to create predictive models
 - `about_profiles(topic="datediff-entity-vars")`: Learn how to create time-based features
 - `about_profiles(topic="macros")`: Learn how to create reusable code blocks in macros.yaml
-- `initialize_snowflake_connection()`: Create or verify Snowflake connections programmatically
+- `initialize_warehouse_connection()`: Create or verify warehouse connections programmatically
 
 ### **🔧 Project Management Tools**
 - `setup_new_profiles_project()`: Initialize new profiles project with dependencies
@@ -367,7 +367,7 @@ pb version
 pb init connection
 
 # Option 2: Create a new connection via MCP tool (programmatic)
-# Use initialize_snowflake_connection() tool for seamless AI workflow integration
+# Use initialize_warehouse_connection() tool for seamless AI workflow integration
 ```
 
 ## Core Commands
@@ -1091,10 +1091,10 @@ These predictive capabilities enable data-driven decision-making by calculating 
 - **Improved resource allocation**: Focus resources on high-value user segments (regression/classification model, depending on the use-case)
 
 ## Prerequisites
-- An active RudderStack Profiles project (v0.22.0 or above) using Snowflake, BigQuery, or Redshift. If an older version, you can upgrade to v0.22.0 by running `pip install --upgrade profiles-rudderstack`
+- An active RudderStack Profiles project (v0.22.0 or above) using Snowflake or BigQuery. If an older version, you can upgrade to v0.22.0 by running `pip install --upgrade profiles-rudderstack`
 - Install the profiles-mlcorelib library: `pip install --upgrade profiles-mlcorelib`
 - Python requirements:
-  - Redshift/BigQuery: Python 3.9.0 to 3.11.10
+  - BigQuery: Python ≥ 3.9.0 and < 3.11.0
   - Snowflake: Python ≥ 3.9.0 and < 3.11.0
 - Update pb_project.yaml to include:
 ```yaml

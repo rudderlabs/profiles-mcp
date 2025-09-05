@@ -580,7 +580,7 @@ After activating the environment, you can:
 
    or
 
-   use initialize_snowflake_connection() tool to create a new connection
+   use initialize_warehouse_connection() tool to create a new connection
 
 2. Create your project configuration files (pb_project.yaml, inputs.yaml, models.yaml)
 
@@ -647,7 +647,7 @@ You can directly start using Profiles commands with the `pb` CLI tool:
 
    or
 
-   use initialize_snowflake_connection() tool to create a new connection
+   use initialize_warehouse_connection() tool to create a new connection
 
 2. Create your project configuration files (pb_project.yaml, inputs.yaml, models.yaml)
 
@@ -1314,7 +1314,7 @@ For more information, refer to the RudderStack Profiles documentation.
                 "blocked_reasons": ["❌ PLACEHOLDER CONNECTION NAME DETECTED"],
                 "critical_warnings": [
                     "🚨 user_confirmed_connection still contains placeholder text",
-                    "🚨 Must be actual connection name the user has confirmed, like: 'snowflake_prod_warehouse'",
+                    "🚨 Must be actual connection name the user has confirmed, like: 'snowflake_prod_warehouse' or 'bigquery_staging_warehouse'",
                 ],
                 "next_tools": ["get_existing_connections"],
                 "workflow_steps": [
