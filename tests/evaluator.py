@@ -3,20 +3,20 @@
 MCP Tool Evaluation Framework with interactive conversation support
 """
 
+import argparse
+import csv as csv_module
+import json
+import logging
 import os
 import sys
-import json
 import time
-import csv as csv_module
-import argparse
-import logging
-from datetime import datetime
-from typing import List, Dict, Optional, Any, Union
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import List, Dict, Optional, Any, Union
 
-from dotenv import load_dotenv
 from anthropic import Anthropic
+from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
@@ -28,7 +28,7 @@ sys.path.insert(0, str(project_root / "src"))
 # Import MCP tools and dependencies
 from main import (
     about_profiles, get_existing_connections, search_profiles_docs,
-    initialize_snowflake_connection, run_query, input_table_suggestions,
+    initialize_warehouse_connection, run_query, input_table_suggestions,
     describe_table, get_profiles_output_details, setup_new_profiles_project,
     evaluate_eligible_user_filters, profiles_workflow_guide,
     analyze_and_validate_project, validate_propensity_model_config,
@@ -145,7 +145,7 @@ TOOL_REGISTRY = {
     "about_profiles": about_profiles,
     "get_existing_connections": get_existing_connections,
     "search_profiles_docs": search_profiles_docs,
-    "initialize_snowflake_connection": initialize_snowflake_connection,
+    "initialize_warehouse_connection": initialize_warehouse_connection,
     "run_query": run_query,
     "input_table_suggestions": input_table_suggestions,
     "describe_table": describe_table,

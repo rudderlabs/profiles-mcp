@@ -6,8 +6,11 @@ This component provides a Model Context Protocol (MCP) server for building profi
 
 
 - Requires Python 3.10.x to be installed
-- Access to Snowflake with appropriate permissions (read access to input tables for profiles, and write access to a schema where profiles can generate outputs)
-- **Important**: Snowflake MFA (Multi-Factor Authentication) is not supported. If your Snowflake account has MFA enabled, you must use [key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth) instead. Key-pair authentication is Snowflake's recommended method for uninterrupted programmatic access and provides security for automated tools.
+- Access to a supported data warehouse with appropriate permissions:
+  - **Snowflake**: Read access to input tables and write access to output schema
+  - **BigQuery**: Read access to input datasets and write access to output dataset
+- **Snowflake Authentication**: MFA (Multi-Factor Authentication) is not supported. If your Snowflake account has MFA enabled, you must use [key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth) instead.
+- **BigQuery Authentication**: Supports Service Account JSON files and Application Default Credentials
 - Cursor IDE v0.47.x or higher installed for building profiles projects. A free version works in theory but the experience is significantly better with a paid version
 - A Rudderstack [Personal Access Token](https://www.rudderstack.com/docs/dashboard-guides/personal-access-token/#generate-personal-access-token)
 
@@ -36,8 +39,9 @@ Once configured, you can use natural language to build a profiles project throug
 
 ```txt
 -- Example queries
-- build a rudderstack profiles project to calcualte the churn propensity score for the data in snowflake under db RUDDERSTACK_TEST_DB and schema predictions_dev_project
-- build a rudderstack profiles project to find revenue metrics for each user in snowflake under db RUDDERSTACK_TEST_DB and schema predictions_dev_project
+- build a rudderstack profiles project to calculate the churn propensity score for the data in snowflake under db RUDDERSTACK_TEST_DB and schema predictions_dev_project
+- build a rudderstack profiles project to find revenue metrics for each user in BigQuery under project my-project and dataset predictions_dev
+- build a rudderstack profiles project to create customer segments using data from my warehouse
 ```
 
 While the chat experience will work with most LLMs, we recommend using claude 4.0 class of models (ex: sonnet-4)
@@ -60,16 +64,25 @@ The MCP Server provides following categories of tools:
 
 * Resources tool - `about_profiles`. It provides the AI agent with static text, which has the required info about the pb concepts, models, syntax etc.
 * RAG tools. Example `search_profiles_docs`. For more open-ended questions that can be answered from our docs, these tools provide a way for the agent to ask specific questions and get answers. These tools are useful for debugging when the agent faces any errors
-* Query tools. Example are `run_query`, `input_table_suggestions` etc. These use a snowflake connector and can be used to run queries directly on the warehouse
+* Query tools. Example are `run_query`, `input_table_suggestions` etc. These use warehouse connectors (Snowflake & BigQuery) and can be used to run queries directly on the warehouse
 * Profiles utility tools. Example are `get_profiles_output_details`, `get_existing_connections` etc, which look at the yaml files, output files, siteconfig etc and provide required context to the AI agent
 
 ## Key components:
-1. A snowflake connector that connects to the warehouse using credentials provided while setting up the tool. It needs to be to the same account where the project will eventually be built. This need not be in the same database or schema where profiles inputs or outputs will be generated
-2. An in-memory Qdrant vector db enables the RAG workflow
+1. **Multi-warehouse support**: Factory-pattern warehouse connectors for Snowflake and BigQuery that connect using credentials provided during setup. The connection should be to the same warehouse where the profiles project will be built, but doesn't need to be in the same database/schema as the input or output data.
+2. **Unified warehouse interface**: All warehouse operations use the same API regardless of the underlying warehouse type
+3. **In-memory Qdrant vector database**: Enables the RAG workflow for documentation search
+
+## Supported Data Warehouses
+
+| Warehouse | Status | Authentication Methods | Notes |
+|-----------|--------|----------------------|-------|
+| **Snowflake** | ✅ Fully Supported | Username/Password, Key Pair, SSO | MFA not supported, use key-pair auth instead |
+| **BigQuery** | ✅ Fully Supported | Service Account JSON, Application Default Credentials | Project-based permissions required |
 
 ## Coming soon:
 1. Integration to Claude desktop automatically
 2. More analysis tools on the profiles output tables
+3. Additional warehouse support (Redshift, Databricks)
 
 ## For Developers
 

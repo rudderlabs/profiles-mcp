@@ -4,7 +4,7 @@
 
 ### What is Profiles MCP?
 
-Profiles MCP is a Model Context Protocol (MCP) server designed to facilitate building and managing RudderStack Profiles projects through AI-powered tools and direct Snowflake integration. It serves as an intelligent assistant that guides users through the complete lifecycle of customer data unification projects.
+Profiles MCP is a Model Context Protocol (MCP) server designed to facilitate building and managing RudderStack Profiles projects through AI-powered tools and direct data warehouse integration (Snowflake and BigQuery). It serves as an intelligent assistant that guides users through the complete lifecycle of customer data unification projects.
 
 ### Key Capabilities
 
@@ -12,7 +12,7 @@ Profiles MCP is a Model Context Protocol (MCP) server designed to facilitate bui
 - **Data Discovery**: Automated table and connection discovery with user confirmation
 - **Configuration Generation**: Smart YAML generation with validation and user approval
 - **Documentation Integration**: RAG-powered documentation and FAQ search
-- **Direct Warehouse Access**: Real-time SQL execution and data analysis
+- **Direct Warehouse Access**: Real-time SQL execution and data analysis (Snowflake & BigQuery)
 - **Quality Assurance**: Multi-layer validation to prevent AI hallucination
 
 ### High-Level Architecture
@@ -32,7 +32,7 @@ flowchart TD
 
     D --> Tools
     C --> I[Validation Engine]
-    F --> J[Snowflake Integration]
+    F --> J[Data Warehouse Integration]
     H --> K[RudderStack Analytics]
 
     style C fill:#ff9999
@@ -59,7 +59,10 @@ profiles-mcp/
 │   │   ├── about.py            # Documentation provider
 │   │   ├── faq.py              # FAQ search
 │   │   ├── docs.py             # Documentation search
-│   │   ├── snowflake.py        # Data warehouse integration
+│   │   ├── warehouse_base.py   # Data warehouse base integration
+│   │   ├── warehouse_factory.py # Warehouse factory and manager
+│   │   ├── snowflake.py        # Snowflake integration
+│   │   ├── bigquery.py         # BigQuery integration
 │   │   └── profiles.py         # Project management tools
 │   ├── utils/                   # Shared utilities
 │   │   ├── analytics.py        # Usage tracking
@@ -118,7 +121,7 @@ flowchart TB
         D[About - Documentation]
         E[FAQ - Question Search]
         F[Docs - Content Search]
-        G[Snowflake - Data Access]
+        G[WarehouseManager - Data Access]
         H[Profiles - Project Management]
     end
 
@@ -153,7 +156,7 @@ flowchart TB
 | **About** | Documentation provider | Topic-specific guides, examples, best practices |
 | **FAQ** | Question answering | Vector-based FAQ search and retrieval |
 | **Docs** | Content search | RAG-powered documentation search |
-| **Snowflake** | Data warehouse integration | Query execution, table discovery, schema analysis |
+| **WarehouseManager** | Multi-warehouse management | Connection management, query execution, table discovery (Snowflake & BigQuery) |
 | **Profiles** | Project management | Workflow orchestration, project setup, validation |
 
 ### Data Flow
@@ -165,7 +168,7 @@ flowchart LR
     C --> D{Tool Type}
 
     D -->|Documentation| E[Vector Search]
-    D -->|Data Query| F[Snowflake Session]
+    D -->|Data Query| F[Warehouse Session]
     D -->|Workflow| G[Validation Engine]
 
     E --> H[Content Retrieval]
@@ -181,11 +184,14 @@ flowchart LR
 
 ### Integration Points
 
-#### Snowflake Integration
-- **Session Management**: Persistent connections with credential handling
-- **Query Execution**: Direct SQL execution with result formatting
-- **Schema Discovery**: Automated table and column introspection
-- **Data Analysis**: Sample data examination and pattern recognition
+#### Data Warehouse Integration
+- **Multi-Warehouse Support**: Factory pattern supporting Snowflake and BigQuery with unified BaseWarehouse interface
+- **WarehouseManager**: Centralized management of multiple warehouse connections with session pooling
+- **WarehouseFactory**: Dynamic warehouse instance creation based on connection type
+- **Session Management**: Persistent connections with credential handling and automatic session validation
+- **Query Execution**: Unified SQL execution interface with warehouse-specific optimizations
+- **Schema Discovery**: Automated table and column introspection across all supported warehouse types
+- **Data Analysis**: Sample data examination and pattern recognition with warehouse-agnostic methods
 
 #### Analytics Integration
 - **Event Tracking**: All tool usage tracked via RudderStack
@@ -347,7 +353,7 @@ The `AppContext` provides dependency injection for tool instances:
 class AppContext:
     about: About
     docs: Docs
-    snowflake: Snowflake
+    warehouse_manager: WarehouseManager
     profiles: ProfilesTools
 ```
 
@@ -433,11 +439,15 @@ New tools should integrate with the orchestration system by defining:
 
 #### Environment Variables
 ```bash
-# Snowflake connection
+# Data Warehouse connections (Snowflake example)
 SNOWFLAKE_ACCOUNT=your_account
 SNOWFLAKE_USER=your_user
 SNOWFLAKE_PASSWORD=your_password
 SNOWFLAKE_WAREHOUSE=your_warehouse
+
+# BigQuery configuration example
+GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json
+BIGQUERY_PROJECT_ID=your_project_id
 
 # RudderStack analytics
 RUDDERSTACK_WRITE_KEY=your_write_key
@@ -459,10 +469,10 @@ Central configuration in `constants.py` includes file paths, vector database set
 - **Python 3.10+**: Required for profiles-rudderstack compatibility
 - **FastMCP**: Server framework
 - **Vector Database**: For document search
-- **Snowflake Connector**: For warehouse integration
+- **Data Warehouse Connectors**: Snowflake and BigQuery integrations
 
 #### Performance Optimization
-- **Connection Pooling**: Reuse Snowflake connections
+- **Connection Pooling**: Reuse data warehouse connections (Snowflake & BigQuery)
 - **Caching**: Cache frequently accessed documentation
 - **Parallel Processing**: Use async patterns for I/O operations
 - **Resource Limits**: Set appropriate timeouts and memory limits
@@ -514,7 +524,76 @@ Central configuration in `constants.py` includes file paths, vector database set
 
 ---
 
-## 8. Key Implementation Notes
+## 8. Warehouse Architecture Details
+
+### Multi-Warehouse Factory Pattern
+
+The system uses a sophisticated factory pattern to support multiple data warehouse types while maintaining a consistent interface:
+
+```python
+# Warehouse inheritance hierarchy
+BaseWarehouse (Abstract)
+├── Snowflake (Implementation)
+└── BigQuery (Implementation)
+
+# Factory and Management
+WarehouseFactory
+├── create_warehouse(type) -> BaseWarehouse
+├── register_warehouse(type, class)
+└── get_supported_types()
+
+WarehouseManager
+├── initialize_warehouse(name, details)
+├── get_active_warehouse()
+├── set_active_warehouse(name)
+└── close_all_warehouses()
+```
+
+### Warehouse Integration Flow
+
+```mermaid
+sequenceDiagram
+    participant Tool as MCP Tool
+    participant Manager as WarehouseManager
+    participant Factory as WarehouseFactory
+    participant Warehouse as BaseWarehouse
+    participant Session as Warehouse Session
+
+    Tool->>Manager: initialize_warehouse(name, details)
+    Manager->>Factory: create_warehouse(type)
+    Factory->>Warehouse: new Snowflake() / new BigQuery()
+    Manager->>Warehouse: initialize_connection(details)
+    Warehouse->>Session: create_session()
+    Session-->>Warehouse: session object
+    Warehouse-->>Manager: initialized warehouse
+    Manager->>Manager: set_active_warehouse()
+    Manager-->>Tool: warehouse ready
+```
+
+### Supported Warehouse Types
+
+| Warehouse | Status | Authentication | Special Features |
+|-----------|--------|---------------|------------------|
+| **Snowflake** | ✅ Fully Supported | Username/Password, Key Pair, SSO | Role-based access, automatic session refresh |
+| **BigQuery** | ✅ Fully Supported | Service Account JSON, Application Default Credentials | Project/Dataset scoping, optimized queries |
+
+### Connection Management
+
+#### Connection Lifecycle
+1. **Discovery**: `get_existing_connections()` lists available pb connections
+2. **Initialization**: `initialize_warehouse_connection()` creates warehouse instance
+3. **Session Creation**: Warehouse-specific session establishment with credentials
+4. **Active Management**: WarehouseManager tracks active warehouse for tool operations
+5. **Cleanup**: Automatic session cleanup on server shutdown
+
+#### Session Validation
+- **Automatic Refresh**: Sessions are validated before each query execution
+- **Timeout Handling**: Expired sessions are automatically recreated
+- **Error Recovery**: Connection failures trigger session recreation with exponential backoff
+
+---
+
+## 9. Key Implementation Notes
 
 ### Date Filtering Architecture
 
