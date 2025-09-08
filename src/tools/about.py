@@ -1094,7 +1094,7 @@ These predictive capabilities enable data-driven decision-making by calculating 
 - An active RudderStack Profiles project (v0.22.0 or above) using Snowflake or BigQuery. If an older version, you can upgrade to v0.22.0 by running `pip install --upgrade profiles-rudderstack`
 - Install the profiles-mlcorelib library: `pip install --upgrade profiles-mlcorelib`
 - Python requirements:
-  - BigQuery: Python ≥ 3.9.0 and < 3.11.0
+  - BigQuery: Python 3.9.0 to 3.11.10
   - Snowflake: Python ≥ 3.9.0 and < 3.11.0
 - Update pb_project.yaml to include:
 ```yaml

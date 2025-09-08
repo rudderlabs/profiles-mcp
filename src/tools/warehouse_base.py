@@ -150,7 +150,10 @@ class BaseWarehouse(ABC):
         try:
             self.ensure_valid_session()
             response = self.raw_query(query)
-            return response[0][count_column] or 0
+            if response is not None:
+                return response[0].get(count_column, 0)
+            else:
+                return 0
         except Exception as e:
             message = f"Failed to get row count for table {table_name} with where_clause {where_clause}: {str(e)}"
             raise Exception(message)
