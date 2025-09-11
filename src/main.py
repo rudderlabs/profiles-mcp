@@ -123,7 +123,7 @@ def about_profiles(ctx: Context, topic: str = "profiles") -> str:
     - "cli" - Profile Builder CLI commands, syntax, and best practices
     - "project" - pb_project.yaml configuration file structure and options
     - "inputs" - inputs.yaml configuration for data sources and connections
-    - "models" - models.yaml configuration for features and identity resolution
+    - "models" - profiles.yaml configuration for features and identity resolution
     - "macros" - macros.yaml configuration for reusable code blocks
     - "propensity" - Propensity score calculation and implementation
     - "datediff-entity-vars" - Date difference entity variables for time-based features
@@ -360,7 +360,7 @@ def run_query(ctx: Context, query: str) -> pd.DataFrame:
 
     Use this tool before configuring:
     - inputs.yaml: Analyze source tables and their relationships
-    - models.yaml: Test feature calculations and identity resolution logic
+    - profiles.yaml: Test feature calculations and identity resolution logic
     - ID stitcher: Validate identity field relationships
     - Feature definitions: Verify aggregation logic
 
@@ -436,7 +436,7 @@ def describe_table(ctx: Context, database: str, schema: str, table: str) -> list
     - Examine the columns and their data types within a specific table.
     - Verify table structures before configuring `inputs.yaml`.
     - Inform the construction of SQL queries for `run_query`.
-    - Aid in understanding data relationships when defining features or configuring the ID stitcher in `models.yaml`.
+    - Aid in understanding data relationships when defining features or configuring the ID stitcher in `profiles.yaml`.
 
     Workflow:
     1. Use `input_table_suggestions(database="your_db", schemas="your_schema")` to get a list of potential tables.
@@ -564,7 +564,7 @@ def setup_new_profiles_project(ctx: Context, project_path: str) -> dict:
     - Switching between different Python versions
 
     This tool focuses on creating the basic project structure and installing necessary Python dependencies.
-    For configuring your `pb_project.yaml`, `inputs.yaml`, `models.yaml`, and other aspects of your RudderStack Profiles project,
+    For configuring your `pb_project.yaml`, `inputs.yaml`, `profiles.yaml`, and other aspects of your RudderStack Profiles project,
     please use other available MCP tools such as `about_profiles(topic="project")`, `about_profiles(topic="inputs")`, `about_profiles(topic="models")`, etc.
 
     Args:

@@ -14,7 +14,7 @@ class About:
                 - "cli" - Profile Builder CLI commands
                 - "project" - pb_project.yaml configuration
                 - "inputs" - inputs.yaml configuration
-                - "models" - models.yaml configuration
+                - "models" - profiles.yaml configuration
                 - "macros" - macros.yaml configuration
                 - "propensity" - Propensity score implementation
                 - "datediff-entity-vars" - Date difference entity variables
@@ -141,8 +141,8 @@ profiles_workflow_guide(
       user_confirmed_connection="actual_connection_name"
     )
 15. PRESENT feature options to user and get confirmation
-16. Create models.yaml using ONLY user-confirmed names
-17. PRESENT final models.yaml to user for approval
+16. Create profiles.yaml using ONLY user-confirmed names
+17. PRESENT final profiles.yaml to user for approval
 ```
 
 ### **Phase 6: Testing**
@@ -198,11 +198,11 @@ WAIT for user response, then create only requested features
 ### **5. Final Configuration Review**
 ```
 # ❌ WRONG: Immediate file creation
-# AI creates inputs.yaml and models.yaml files
+# AI creates inputs.yaml and profiles.yaml files
 
 # ✅ CORRECT: User approval required
 "Here's the inputs.yaml I'll create: [show content]. Does this look correct?"
-"Here's the models.yaml I'll create: [show content]. Should I proceed?"
+"Here's the profiles.yaml I'll create: [show content]. Should I proceed?"
 WAIT for user approval before creating files
 ```
 
@@ -220,7 +220,7 @@ The AI MUST NOT proceed if:
 your-profiles-project/
 ├── models/
 │   ├── inputs.yaml      # Define your data sources
-│   ├── models.yaml      # Define features and identity stitching
+│   ├── profiles.yaml    # Define features and identity stitching
 │   ├── sql_models.yaml  # Optional: Custom SQL models
 │   └── macros.yaml      # Optional: Reusable SQL snippets
 └── pb_project.yaml      # Project configuration
@@ -228,7 +228,7 @@ your-profiles-project/
 
 ## 2. Key Components
 - **inputs.yaml**: Define your data sources (tables/views)
-- **models.yaml**: Define models (id_stitcher, propensity), features (entity_vars)
+- **profiles.yaml**: Define models (id_stitcher, propensity), features (entity_vars)
 - **pb_project.yaml**: Configure project settings, entities, and ID types
 - **macros.yaml**: Define reusable SQL snippets (Use `about_profiles(topic="macros")` for detailed information)
 
@@ -382,7 +382,7 @@ pb version
 Creates connections and initializes projects:
 ```
 pb init connection     # Set up a warehouse connection
-pb init pb-project -o .  # Initialize a new project, by creating pb_project.yaml, inputs.yaml, and models.yaml files with lots of placeholder values that must be edited. The `-o .` is used to create the files in the current directory.
+pb init pb-project -o .  # Initialize a new project, by creating pb_project.yaml, inputs.yaml, and profiles.yaml files with lots of placeholder values that must be edited. The `-o .` is used to create the files in the current directory.
 ```
 
 ### validate
@@ -782,7 +782,7 @@ Profiles helps you create unified customer views by:
 2. Generating customer features from various data sources
 
 ## Prerequisites
-Before configuring models.yaml:
+Before configuring profiles.yaml:
 1. Use about_profiles(topic="project") to understand the project structure and entities.
 2. Use about_profiles(topic="inputs") to understand the data sources and the data flow.
 3. Use run_query() to:
@@ -799,7 +799,7 @@ Before configuring models.yaml:
 
 ## Identity Resolution Configuration
 
-### 1. Basic ID Stitcher in models.yaml
+### 1. Basic ID Stitcher in profiles.yaml
 ```yaml
 models:
   - name: user_id_stitcher
@@ -1147,7 +1147,7 @@ var_groups:
       - entity_var:
           name: days_since_last_seen
           select: "{{macro_datediff('max(timestamp)')}}"
-          from: models/rsPages
+          from: inputs/rsPages
       - entity_var:
           name: n_sessions
           select: count(distinct session_id)
@@ -1357,7 +1357,7 @@ AI MUST NOT create propensity config if:
 # Date Difference Entity Variables Guide
 
 > **IMPORTANT:**
-> - Date filtering in entity_vars is **required** for time-based features (e.g., days_since_last_seen, is_active_last_week). This is **different** from project-level date filtering, which should be done with the `--begin_time` flag and **NOT** with YAML where clauses in inputs.yaml or at the top level of models.yaml.
+> - Date filtering in entity_vars is **required** for time-based features (e.g., days_since_last_seen, is_active_last_week). This is **different** from project-level date filtering, which should be done with the `--begin_time` flag and **NOT** with YAML where clauses in inputs.yaml or at the top level of profiles.yaml.
 > - For project-level filtering (e.g., for test/dry runs), see `about_profiles(topic='cli')` and use the `--begin_time` flag.
 
 ## Why Snapshotting Matters for Propensity Models
@@ -1429,7 +1429,7 @@ macros:
 entity_var:
   name: days_since_account_creation
   select: "{{macro_datediff('min(timestamp)')}}"
-  from: models/rsIdentifies
+  from: inputs/rsIdentifies
 ```
 
 ### 2. Active Days in Past 365 Days
@@ -1437,7 +1437,7 @@ entity_var:
 entity_var:
   name: active_days_in_past_365_days
   select: count(distinct date(timestamp))
-  from: models/rsTracks
+  from: inputs/rsTracks
   where: "{{macro_datediff_n('timestamp','365')}}"
   description: Out of 365 days, how many days have recorded an event till date including today
 ```
@@ -1561,7 +1561,7 @@ macros:
 Once defined in macros.yaml, you can call macros in your feature definitions:
 
 ```yaml
-# In models.yaml
+# In profiles.yaml
 - entity_var:
     name: all_anonymous_ids
     select: "{{ array_agg(anonymous_id) }}"
@@ -1766,7 +1766,7 @@ AI agents should extract and report these key metrics from `training_summary.jso
 
 When you identify ML issues, suggest relevant Profiles configuration changes:
 
-**Model Configuration Parameters** (in `models.yaml`):
+**Model Configuration Parameters** (in `profiles.yaml`):
 
 **Sample Size Controls**:
 ```yaml

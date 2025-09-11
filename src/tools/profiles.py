@@ -582,7 +582,7 @@ After activating the environment, you can:
 
    use initialize_warehouse_connection() tool to create a new connection
 
-2. Create your project configuration files (pb_project.yaml, inputs.yaml, models.yaml)
+2. Create your project configuration files (pb_project.yaml, inputs.yaml, profiles.yaml)
 
 3. Run your profiles project:
    ```
@@ -649,7 +649,7 @@ You can directly start using Profiles commands with the `pb` CLI tool:
 
    use initialize_warehouse_connection() tool to create a new connection
 
-2. Create your project configuration files (pb_project.yaml, inputs.yaml, models.yaml)
+2. Create your project configuration files (pb_project.yaml, inputs.yaml, profiles.yaml)
 
 3. Run your profiles project:
    ```
@@ -936,14 +936,14 @@ For more information, refer to the RudderStack Profiles documentation.
             "5. Use simple aggregations: count(), sum(), max(), min(), avg()",
             "6. Avoid complex window functions unless user specifically requests them",
             "7. Use macros for date calculations. For examples, refer to the about_profiles(topic='macros') tool",
-            "8. PRESENT final models.yaml to user for approval before proceeding",
+            "8. PRESENT final profiles.yaml to user for approval before proceeding",
         ]
         guide["critical_warnings"].extend(
             [
                 f"✅ USER CONFIRMED: Using tables '{user_confirmed_tables}'",
                 "⚠️ STILL NEED: User confirmation of which features to create",
                 "⚠️ entity_var with 'from' MUST use aggregation functions",
-                "⚠️ FINAL STEP: Present completed models.yaml to user for approval",
+                "⚠️ FINAL STEP: Present completed profiles.yaml to user for approval",
             ]
         )
         return guide
@@ -1001,7 +1001,7 @@ For more information, refer to the RudderStack Profiles documentation.
         guide["validation_status"] = "ERROR"
         guide["critical_warnings"].extend(
             [
-                "❌ NEVER add WHERE clauses with dates in inputs.yaml or at the top level of models.yaml to filter recent data for test/dry runs.",
+                "❌ NEVER add WHERE clauses with dates in inputs.yaml or at the top level of profiles.yaml to filter recent data for test/dry runs.",
                 "✅ Use 'pb run --begin_time' flag for project-level date filtering (e.g., for test/dry runs).",
                 "⚠️ For time-based features (e.g., days_since_last_seen, is_active_last_week), you MUST use date filters in entity_vars, but ONLY via the provided macros.",
                 "🔗 See about_profiles(topic='datediff-entity-vars') for correct usage of date macros in entity_vars.",
@@ -1523,7 +1523,7 @@ class PropensityValidator:
                 {
                     "type": "MODEL_NOT_FOUND",
                     "message": f"Propensity model '{self.model_name}' not found in models configuration",
-                    "remediation": "Verify the model name exists in your models.yaml file",
+                    "remediation": "Verify the model name exists in your profiles.yaml file",
                 }
             )
             self.result["validation_status"] = "FAILED"
@@ -1597,7 +1597,7 @@ class PropensityValidator:
                         "type": "NO_ENTITY_VAR_DEFINED",
                         "feature": input_feature,
                         "message": f"Entity variable not found for feature: {input_feature}",
-                        "remediation": "Ensure the entity variable is defined in your models.yaml file",
+                        "remediation": "Ensure the entity variable is defined in your profiles.yaml file",
                     }
                 )
 
@@ -1644,7 +1644,7 @@ class PropensityValidator:
                     "type": "FEATURE_NOT_FOUND",
                     "feature": input_feature,
                     "message": f"Entity variable '{feature_info['feature_name']}' not found in models configuration",
-                    "remediation": "Ensure the entity variable is defined in your models.yaml file",
+                    "remediation": "Ensure the entity variable is defined in your profiles.yaml file",
                 }
             )
 
