@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from tools.about import About
 from tools.docs import Docs
-from tools.snowflake import Snowflake
+from tools.warehouse_factory import WarehouseManager
 from tools.profiles import ProfilesTools
 from collections.abc import AsyncIterator
 from dotenv import load_dotenv
@@ -19,58 +19,75 @@ logger = setup_logger(__name__)
 
 logger.info("Starting RudderStack Profiles MCP server")
 
+
 @dataclass
 class AppContext:
     about: About
     docs: Docs
-    snowflake: Snowflake
+    warehouse_manager: WarehouseManager
     profiles: ProfilesTools
+
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     try:
         logger.info("Initializing app context")
-        app_context = AppContext(about=About(), docs=Docs(), snowflake=Snowflake(), profiles=ProfilesTools())
+        app_context = AppContext(
+            about=About(),
+            docs=Docs(),
+            warehouse_manager=WarehouseManager(),
+            profiles=ProfilesTools(),
+        )
         yield app_context
     finally:
-        pass
+        # Clean up warehouse connections
+        logger.info("Starting application cleanup...")
+        if hasattr(app_context, "warehouse_manager"):
+            logger.info("Closing all warehouse connections...")
+            app_context.warehouse_manager.close_all_warehouses()
+            logger.info("Application cleanup completed successfully")
+        else:
+            logger.warning("No warehouse manager found during cleanup")
 
-mcp = FastMCP("rudderstack-profiles",
-              host='127.0.0.1',
-              port=8000,
-              timeout=600,
-              lifespan=app_lifespan
-              )
+
+mcp = FastMCP(
+    "rudderstack-profiles",
+    host="127.0.0.1",
+    port=8000,
+    timeout=600,
+    lifespan=app_lifespan,
+)
 
 analytics = Analytics()
 rudder_client = RudderstackAPIClient()
 
 try:
     user_details = rudder_client.get_user_details()
-    analytics.identify(user_details['id'], { 'email': user_details['email'] })
+    analytics.identify(user_details["id"], {"email": user_details["email"]})
 except Exception as e:
-    logger.error(f"Error identifying user: {e}. MCP requires an active RudderStack account to work properly. Please verify your Personal Access Token is correct")
+    logger.error(
+        f"Error identifying user: {e}. MCP requires an active RudderStack account to work properly. Please verify your Personal Access Token is correct"
+    )
     exit(1)
+
 
 def get_app_context(ctx: Context) -> AppContext:
     return ctx.request_context.lifespan_context
+
 
 def track(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         def get_properties(result, is_error=False):
-            kwargs.pop('ctx', None)
-            kwargs.pop('password', None)
-            kwargs.pop('private_key', None)
-            kwargs.pop('private_key_file', None)
-            kwargs.pop('private_key_passphrase', None)
+            kwargs.pop("ctx", None)
+            kwargs.pop("password", None)
+            kwargs.pop("private_key", None)
+            kwargs.pop("private_key_file", None)
+            kwargs.pop("private_key_passphrase", None)
             properties = {
                 "message": {
-                     "method": "tools/call",
-                     "params": {
-                         "name": func.__name__,
-                         "arguments": kwargs
-                     }
+                    "method": "tools/call",
+                    "params": {"name": func.__name__, "arguments": kwargs},
                 }
             }
             if is_error:
@@ -79,6 +96,7 @@ def track(func):
                 properties["result"] = result
 
             return properties
+
         try:
             result = func(*args, **kwargs)
             analytics.track("mcp_tools/call_success", get_properties(result))
@@ -87,7 +105,9 @@ def track(func):
             logger.error(f"Error in {func.__name__}: {e}")
             analytics.track("mcp_tools/call_error", get_properties(e, is_error=True))
             raise e
+
     return wrapper
+
 
 @mcp.tool()
 @track
@@ -142,6 +162,7 @@ def about_profiles(ctx: Context, topic: str = "profiles") -> str:
     """
     return get_app_context(ctx).about.get_about_info(topic)
 
+
 @mcp.tool()
 @track
 def get_existing_connections(ctx: Context) -> list[str]:
@@ -188,6 +209,7 @@ def get_existing_connections(ctx: Context) -> list[str]:
     """
     return get_app_context(ctx).profiles.get_existing_connections()
 
+
 @mcp.tool()
 @track
 def search_profiles_docs(ctx: Context, query: str) -> list[str]:
@@ -217,13 +239,15 @@ def search_profiles_docs(ctx: Context, query: str) -> list[str]:
     docs = get_app_context(ctx).docs
     return docs.query(query)
 
+
 @mcp.tool()
 @track
-def initialize_snowflake_connection(ctx: Context, connection_name: str) -> dict:
+def initialize_warehouse_connection(ctx: Context, connection_name: str) -> dict:
     """
-    Initializes a Snowflake connection for RudderStack Profiles operations.
+    Initializes a warehouse connection for RudderStack Profiles operations.
+    Supports multiple warehouse types: Snowflake, BigQuery, etc.
 
-    **CRITICAL: This tool must be called before any other Snowflake-dependent tools (run_query, describe_table, input_table_suggestions).**
+    **CRITICAL: This tool must be called before any other warehouse-dependent tools (run_query, describe_table, input_table_suggestions).**
 
     **AI Agent Workflow Instructions:**
 
@@ -256,18 +280,19 @@ def initialize_snowflake_connection(ctx: Context, connection_name: str) -> dict:
         dict: Connection status with keys:
             - status: "success" or "error"
             - message: Human-readable status description
+            - warehouse_type: Type of warehouse that was connected
 
     **Example Usage Patterns:**
 
     ```python
     # Scenario A: User selected from multiple connections
-    result = initialize_snowflake_connection(connection_name="user_selected_conn")
+    result = initialize_warehouse_connection(connection_name="user_selected_conn")
 
     # Scenario B: Single connection auto-selected
-    result = initialize_snowflake_connection(connection_name="only_connection")
+    result = initialize_warehouse_connection(connection_name="only_connection")
 
     # Scenario C: After pb init connection completed
-    result = initialize_snowflake_connection(connection_name="newly_created_conn")
+    result = initialize_warehouse_connection(connection_name="newly_created_conn")
     ```
 
     **Error Handling:**
@@ -277,34 +302,44 @@ def initialize_snowflake_connection(ctx: Context, connection_name: str) -> dict:
     """
     try:
         # Fetch connection credentials securely via profiles module
-        connection_details = get_app_context(ctx).profiles.fetch_snowflake_credentials(connection_name)
+        connection_details = get_app_context(ctx).profiles.fetch_warehouse_credentials(
+            connection_name
+        )
 
         if connection_details["status"] == "error":
             return connection_details
 
-        # Initialize Snowflake connection with credentials in-memory
-        result = get_app_context(ctx).snowflake.initialize_connection(connection_details["connection_details"])
+        # Initialize warehouse connection using the warehouse manager
+        warehouse_manager = get_app_context(ctx).warehouse_manager
+        warehouse = warehouse_manager.initialize_warehouse(
+            connection_name, connection_details["connection_details"]
+        )
 
-        logger.info(f"Snowflake connection '{connection_name}' initialized successfully")
+        warehouse_type = warehouse.warehouse_type
+        logger.info(
+            f"{warehouse_type} connection '{connection_name}' initialized successfully"
+        )
+
         return {
             "status": "success",
-            "message": f"Snowflake connection '{connection_name}' initialized successfully"
+            "message": f"{warehouse_type} connection '{connection_name}' initialized successfully",
+            "warehouse_type": warehouse_type,
         }
 
     except Exception as e:
-        error_message = f"Error initializing Snowflake connection '{connection_name}': {str(e)}"
+        error_message = (
+            f"Error initializing warehouse connection '{connection_name}': {str(e)}"
+        )
         logger.error(error_message)
-        return {
-            "status": "error",
-            "message": error_message
-        }
+        return {"status": "error", "message": error_message}
+
 
 @mcp.tool()
 @track
 def run_query(ctx: Context, query: str) -> pd.DataFrame:
     """Run SQL queries on your warehouse to analyze data for your profiles project.
 
-    IMPORTANT: Before calling this tool, you MUST call initialize_snowflake_connection() once to initialize the connection.
+    IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
 
     This tool is essential for:
     1. Data Discovery:
@@ -339,10 +374,17 @@ def run_query(ctx: Context, query: str) -> pd.DataFrame:
     Example:
         result = run_query("SELECT * FROM my_table LIMIT 10")
     """
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+
     if query.lower().strip().startswith("select"):
-        return get_app_context(ctx).snowflake.raw_query(query, response_type="pandas")
+        return warehouse.raw_query(query, response_type="pandas")
     else:
-        return get_app_context(ctx).snowflake.raw_query(query, response_type="list")
+        return warehouse.raw_query(query, response_type="list")
+
 
 @mcp.tool()
 @track
@@ -351,7 +393,7 @@ def input_table_suggestions(ctx: Context, database: str, schemas: str) -> list[s
     This tool helps identify suitable tables to use in your Profiles project inputs.yaml configuration.
     It analyzes your warehouse data and suggests the most relevant tables for identity resolution and feature generation.
 
-    IMPORTANT: Before calling this tool, you MUST call initialize_snowflake_connection() once to initialize the connection.
+    IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
 
     For best results, provide a database name and one or more schemas to search within.
     The returned tables will be formatted as schema.table_name for easy use in your inputs.yaml configuration.
@@ -360,7 +402,7 @@ def input_table_suggestions(ctx: Context, database: str, schemas: str) -> list[s
     tables contain valuable identity and behavioral data for your customer profiles.
 
     Args:
-        ctx: The MCP context containing the Snowflake session
+        ctx: The MCP context containing the warehouse session
         database: The database name
         schemas: Comma separated list of schemas
 
@@ -372,7 +414,14 @@ def input_table_suggestions(ctx: Context, database: str, schemas: str) -> list[s
         Returns:
             ['my_database.my_schema1.my_table1', 'my_database.my_schema2.my_table2']
     """
-    return get_app_context(ctx).snowflake.input_table_suggestions(database, schemas)
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+
+    return warehouse.input_table_suggestions(database, schemas)
+
 
 @mcp.tool()
 @track
@@ -380,7 +429,7 @@ def describe_table(ctx: Context, database: str, schema: str, table: str) -> list
     """
     Describes the structure of a specified table in your data warehouse, including column names, data types, and other metadata.
 
-    IMPORTANT: Before calling this tool, you MUST call initialize_snowflake_connection() once to initialize the connection.
+    IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
 
     This tool is essential for understanding the schema of your tables before using them in your Profiles project.
     Use this tool to:
@@ -405,11 +454,20 @@ def describe_table(ctx: Context, database: str, schema: str, table: str) -> list
     Returns:
         list[str]: A list of strings describing the table structure (e.g., column name, data type, nullable, etc.).
     """
-    return get_app_context(ctx).snowflake.describe_table(database, schema, table)
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+
+    return warehouse.describe_table(database, schema, table)
+
 
 @mcp.tool()
 @track
-def get_profiles_output_details(ctx: Context, pb_project_file_path: str, pb_show_models_output_file_path: str) -> dict:
+def get_profiles_output_details(
+    ctx: Context, pb_project_file_path: str, pb_show_models_output_file_path: str
+) -> dict:
     """
     Once a profiles project is run, the output tables are created in a single schema, and the table names are from the yaml files.
     This tool extracts the relevant info from the yaml files and returns the data in a structured format.
@@ -460,9 +518,12 @@ def get_profiles_output_details(ctx: Context, pb_project_file_path: str, pb_show
             - "post_run_suggestions": List of suggestions for what to do after outputs are created
             - "docs": Guidance and tips for working with Profiles output tables after a run
     """
-    result = get_app_context(ctx).profiles.get_profiles_models_details(pb_project_file_path, pb_show_models_output_file_path)
+    result = get_app_context(ctx).profiles.get_profiles_models_details(
+        pb_project_file_path, pb_show_models_output_file_path
+    )
     result["docs"] = get_app_context(ctx).about.about_profiles_output()
     return result
+
 
 @mcp.tool()
 @track
@@ -522,6 +583,7 @@ def setup_new_profiles_project(ctx: Context, project_path: str) -> dict:
     """
     return get_app_context(ctx).profiles.setup_new_profiles_project(project_path)
 
+
 @mcp.tool()
 @track
 def evaluate_eligible_user_filters(
@@ -532,7 +594,7 @@ def evaluate_eligible_user_filters(
     entity_column: str,
     min_pos_rate: float = 0.10,
     max_pos_rate: float = 0.90,
-    min_total_rows: int = 5000
+    min_total_rows: int = 5000,
 ) -> dict:
     """
     Evaluates a list of SQL filters to find the best one for defining an eligible user segment.
@@ -570,25 +632,33 @@ def evaluate_eligible_user_filters(
                          'positive_rate', and 'recall'. If no best filter is found,
                          it returns {"recall": -1.0} for metrics.
     """
-    app_ctx = get_app_context(ctx)
-    return app_ctx.snowflake.eligible_user_evaluator(
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+
+    return warehouse.eligible_user_evaluator(
         filter_sqls=filter_sqls,
         label_table=label_table,
         label_column=label_column,
         entity_column=entity_column,
         min_pos_rate=min_pos_rate,
         max_pos_rate=max_pos_rate,
-        min_total_rows=min_total_rows
+        min_total_rows=min_total_rows,
     )
+
 
 @mcp.tool()
 @track
-def profiles_workflow_guide(ctx: Context,
-                           user_goal: str,
-                           current_action: str = "start",
-                           user_confirmed_tables: str = "",
-                           user_confirmed_connection: str = "",
-                           knowledge_phase_completed: str = "") -> dict:
+def profiles_workflow_guide(
+    ctx: Context,
+    user_goal: str,
+    current_action: str = "start",
+    user_confirmed_tables: str = "",
+    user_confirmed_connection: str = "",
+    knowledge_phase_completed: str = "",
+) -> dict:
     """
     **MANDATORY FIRST TOOL**: Your complete workflow guide for profiles projects.
     Provides task recommendations, step-by-step guidance, and validation all in one place.
@@ -615,7 +685,14 @@ def profiles_workflow_guide(ctx: Context,
     Returns:
         dict: Complete workflow guidance including next tools, validation, and warnings
     """
-    return get_app_context(ctx).profiles.workflow_guide(user_goal, current_action, user_confirmed_tables, user_confirmed_connection, knowledge_phase_completed)
+    return get_app_context(ctx).profiles.workflow_guide(
+        user_goal,
+        current_action,
+        user_confirmed_tables,
+        user_confirmed_connection,
+        knowledge_phase_completed,
+    )
+
 
 @mcp.tool()
 @track
@@ -658,9 +735,12 @@ def analyze_and_validate_project(ctx: Context, project_path: str) -> dict:
     """
     return get_app_context(ctx).profiles.analyze_and_validate_project(project_path)
 
+
 @mcp.tool()
 @track
-def validate_propensity_model_config(ctx: Context, project_path: str, model_name: str) -> dict:
+def validate_propensity_model_config(
+    ctx: Context, project_path: str, model_name: str
+) -> dict:
     """
     Validates propensity model configuration for common pitfalls before running the model.
 
@@ -696,10 +776,14 @@ def validate_propensity_model_config(ctx: Context, project_path: str, model_name
             print("Validation passed!")
     """
     app_ctx = get_app_context(ctx)
+    warehouse = app_ctx.warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+
     return app_ctx.profiles.validate_propensity_model_config(
-        project_path=project_path,
-        model_name=model_name,
-        snowflake_client=app_ctx.snowflake
+        project_path=project_path, model_name=model_name, warehouse_client=warehouse
     )
 
 
