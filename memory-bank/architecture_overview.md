@@ -615,7 +615,7 @@ entity_var:
   where: "{{macro_datediff_n('timestamp','30')}}"
 ```
 
-**Critical Rule**: Never add date WHERE clauses to `inputs.yaml` or top-level `models.yaml` for project filtering.
+**Critical Rule**: Never add date WHERE clauses to `inputs.yaml` or top-level `profiles.yaml` for project filtering.
 
 ### Entity Variable Best Practices
 
