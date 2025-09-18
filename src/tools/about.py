@@ -1090,6 +1090,57 @@ These predictive capabilities enable data-driven decision-making by calculating 
 - **Increased conversions**: Prioritize leads with a higher propensity to convert (classification model)
 - **Improved resource allocation**: Focus resources on high-value user segments (regression/classification model, depending on the use-case)
 
+## 🚨 **CRITICAL: Date Handling Rules for Propensity Models**
+
+### **MANDATORY: Always Use Macros for Date Functions**
+
+**NEVER use these directly in entity_vars:**
+- ❌ `current_date()` or `CURRENT_DATE()`
+- ❌ `current_timestamp()` or `CURRENT_TIMESTAMP()`
+- ❌ `datediff()` without macros
+- ❌ `sysdate`, `getdate()`, `now()`
+- ❌ Any hardcoded date functions
+
+**ALWAYS use macros instead:**
+- ✅ `{{macro_datediff('column_name')}}` - for days since a date
+- ✅ `{{macro_datediff_n('column_name', 'days')}}` - for date range filters
+
+### **Why Macros are MANDATORY:**
+1. **Warehouse Portability**: Macros handle syntax differences between Snowflake/BigQuery
+2. **Begin Time Support**: Macros automatically respect `pb run --begin_time` flag
+3. **Training Consistency**: Ensures consistent date calculations across training/prediction
+4. **Error Prevention**: Avoids runtime failures from warehouse-specific functions
+
+### **Common Mistakes to AVOID:**
+
+```yaml
+# ❌ WRONG - Direct date function (WILL FAIL)
+entity_var:
+  name: days_since_last_seen
+  select: "datediff('day', max(timestamp), current_date())"
+  from: inputs/events
+
+# ✅ CORRECT - Using macro
+entity_var:
+  name: days_since_last_seen
+  select: "{{macro_datediff('max(timestamp)')}}"
+  from: inputs/events
+
+# ❌ WRONG - Direct date filter (WILL FAIL)
+entity_var:
+  name: recent_revenue
+  select: sum(amount)
+  from: inputs/orders
+  where: "datediff('day', order_date, current_date()) <= 30"
+
+# ✅ CORRECT - Using macro for date filter
+entity_var:
+  name: recent_revenue
+  select: sum(amount)
+  from: inputs/orders
+  where: "{{macro_datediff_n('order_date', '30')}}"
+```
+
 ## Prerequisites
 - An active RudderStack Profiles project (v0.22.0 or above) using Snowflake or BigQuery. If an older version, you can upgrade to v0.22.0 by running `pip install --upgrade profiles-rudderstack`
 - Install the profiles-mlcorelib library: `pip install --upgrade profiles-mlcorelib`
@@ -1101,6 +1152,7 @@ These predictive capabilities enable data-driven decision-making by calculating 
 python_requirements:
   - profiles_mlcorelib>=0.8.1
 ```
+- **MANDATORY**: Define date macros in macros.yaml (see about_profiles(topic="macros"))
 
 ## Project Setup Steps
 
@@ -1159,9 +1211,41 @@ var_groups:
 2. Use features derived from event stream datasources (from input sources with is_event_stream: true). Features from static ETL tables without history will result in overconfident models.
 
 ### Step 4: Set the Prediction Window
-The prediction window is the time period for predicting future user state.
 
-#### Common Windows by Use Case:
+**🤖 AI UNDERSTANDING REQUIRED: Feature Date vs Label Date**
+
+Propensity models use temporal separation between feature extraction and label measurement:
+- **Feature Date (T0)**: When user features/behavior are captured
+- **Label Date (T0 + predict_window_days)**: When outcome is measured
+- **eligible_users condition applies at Feature Date**, not Label Date
+
+**Key for AI: The eligible_users filter selects users at T0, but the model predicts their behavior at T0+N days**
+
+#### **AI Decision Principles & Examples**
+
+When suggesting predict_window_days and eligible_users, consider these contextual examples:
+
+**Early Lifecycle Value Prediction (typical pattern)**
+- Context: User wants to predict new user value/LTV
+- Example approach: `eligible_users: days_since_account_creation <= 7`, `predict_window_days: 30`
+- Reasoning: Capture first-week behavior to predict 30-day future value
+- Adapt based on: User's actual onboarding timeline and available tenure features
+
+**Activity-Based Risk Prediction (typical pattern)**
+- Context: User wants churn/engagement prediction
+- Example approach: `eligible_users: days_since_last_seen <= 7`, `predict_window_days: 14`
+- Reasoning: Focus on recently active users to predict near-term behavior
+- Adapt based on: User's engagement cycle and available activity features
+
+**Monetization Opportunity Prediction (typical pattern)**
+- Context: User wants to identify conversion opportunities
+- Example approach: `eligible_users: days_since_signup <= 14 AND revenue = 0`, `predict_window_days: 30`
+- Reasoning: Target new non-paying users to predict conversion likelihood
+- Adapt based on: User's conversion funnel timing and available value features
+
+**Key principle**: Use these as starting points, then adapt based on the user's specific business context, available entity_vars, and data patterns revealed through analysis.
+
+#### **Common Windows by Use Case**
 - **LTV (new users)**: 30 days - optimizing for new user campaigns
 - **LTV (retention)**: 90 days - subscription retargeting
 - **Churn (high engagement)**: 7 days - gaming, daily active apps
@@ -1169,17 +1253,37 @@ The prediction window is the time period for predicting future user state.
 - **Lead Score**: 7 days - quick conversion decisions 
 
 ### Step 5: Define Eligible Users
-Eligible users are the subset used for model training. This is a SQL WHERE clause on the C360 table.
+
+**🤖 AI GUIDANCE: eligible_users determines training population at Feature Date (T0)**
 
 #### Requirements:
 1. All features in the clause must be defined as entity_vars with is_feature: true (default)
 2. All referenced features must be in the inputs list
 
-#### Common Patterns:
-- **LTV (new users)**: `days_since_account_creation <= 7`
-- **LTV (retention)**: `days_since_last_seen <= 30 AND has_active_subscription = 1`
-- **Churn**: `days_since_last_seen <= 7`
-- **Lead Score**: `days_since_account_creation <= 7 AND is_payer = 0`
+#### **Common Patterns & Contextual Adaptation**
+
+**New User Value Examples:**
+- `days_since_account_creation <= 7` (first week behavior)
+- `days_since_signup <= 14 AND revenue = 0` (early non-paying period)
+- Adapt timing based on user's actual onboarding flow
+
+**Activity-Based Examples:**
+- `days_since_last_seen <= 7` (recently active users)
+- `days_since_last_session <= 30 AND total_sessions >= 5` (engaged but not recent)
+- Adapt thresholds based on user's engagement patterns
+
+**Conversion/Monetization Examples:**
+- `is_trial_user = 1 AND days_until_trial_end <= 7` (trial ending soon)
+- `subscription_status = 'freemium' AND days_since_signup >= 30` (established free users)
+- Adapt based on user's business model and conversion funnel
+
+**Contextual Adaptation Guidelines:**
+1. **Examine available entity_vars** to understand what time/value features exist
+2. **Use `run_query()` to analyze data distributions** and validate realistic thresholds
+3. **Consider business context** - subscription vs transactional, B2B vs B2C timing
+4. **Match prediction window to action timeline** - when does the business need to act?
+
+These examples provide starting points, but always adapt based on the specific user's data and business context.
 
 
 ### Step 6: Name Output Features
@@ -1250,12 +1354,28 @@ models:
 - **ignore_features**: Features to exclude from model
 - **inputs**: List of entity_vars to use for training in the format of entity/entity_key/entity_var_name
 
-## Common Pitfalls
-- Propensity model can refer to only those entity_vars listed in the inputs section
-- Entity_vars must not use current_timestamp() - use datediff macros instead
-- Features from static ETL tables without history will cause training issues
-- Propensity models are NOT supported on profiles cohorts - use eligible_users instead
-- All entity_vars in eligible_users clause must be listed in inputs
+## Common Pitfalls & How to Fix Them
+
+### 1. **Date Function Errors (MOST COMMON)**
+- **Problem**: Using `current_date()`, `current_timestamp()`, or direct `datediff()` in entity_vars
+- **Solution**: ALWAYS use macros: `{{macro_datediff()}}` or `{{macro_datediff_n()}}`
+- **Validation**: Run `validate_propensity_model_config()` before `pb run` to catch these errors
+
+### 2. **Missing Inputs**
+- **Problem**: Propensity model can only use entity_vars listed in the inputs section
+- **Solution**: Add ALL required entity_vars to the inputs list, including those in eligible_users
+
+### 3. **Static Table Features**
+- **Problem**: Features from static ETL tables without history cause overconfident models
+- **Solution**: Only use features from event stream sources (is_event_stream: true)
+
+### 4. **Cohort Usage**
+- **Problem**: Propensity models are NOT supported on profiles cohorts
+- **Solution**: Use eligible_users clause instead to define your user subset
+
+### 5. **Warehouse-Specific Functions**
+- **Problem**: Using Snowflake-specific or BigQuery-specific date functions
+- **Solution**: Use macros for warehouse portability
 
 
 ## Output Structure

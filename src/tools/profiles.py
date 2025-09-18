@@ -1055,13 +1055,13 @@ For more information, refer to the RudderStack Profiles documentation.
         guide["validation_status"] = "APPROVED"
         guide["next_tools"] = ["about_profiles", "search_profiles_docs"]
         guide["workflow_steps"] = [
-            "1. Use about_profiles(topic='propensity') for detailed guidance",
-            "2. Ensure binary label (0/1) exists in your features",
-            "3. Use search_profiles_docs() to find propensity examples",
-            "4. PRESENT propensity model configuration to user for approval",
-            "5. Validate training features exist before configuration",
-            "6. Use macros for date calculations. For examples, refer to the about_profiles(topic='macros') tool",
-            "7. Validate propensity model configuration with validate_propensity_model_config()",
+            "1. MANDATORY: Use about_profiles(topic='propensity') for detailed guidance",
+            "2. MANDATORY: Use about_profiles(topic='macros') to understand macro usage, esp in propensity models context",
+            "3. Ensure numeric label for regression or binary label (0/1) for classification",
+            "4. Use search_profiles_docs('propensity macro examples') to find proper examples",
+            "5. CRITICAL: Use ONLY macros for date calculations - NEVER use current_date() or datediff()",
+            "6. PRESENT propensity model label and elgible users conditions to user for approval. Add the config only after the user explicitly approves the label and elgible users conditions",
+            "7. MANDATORY: Run validate_propensity_model_config() BEFORE pb run",
         ]
         return guide
 
@@ -1685,7 +1685,7 @@ class PropensityValidator:
         """Validate an entity variable feature for propensity model usage."""
         feature_name = entity_var.get("name")
         from_table = entity_var.get("from")
-
+        
         if not from_table:
             # Feature doesn't reference an input table directly
             return
