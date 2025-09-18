@@ -694,49 +694,50 @@ def profiles_workflow_guide(
     )
 
 
-@mcp.tool()
-@track
-def analyze_and_validate_project(ctx: Context, project_path: str) -> dict:
-    """
-    Analyzes the structure of an existing profiles project offline.
+# TODO: Uncomment this tool once we fix the mcp unavailable errors on Cline
+# @mcp.tool()
+# @track
+# def analyze_and_validate_project(ctx: Context, project_path: str) -> dict:
+#     """
+#     Analyzes the structure of an existing profiles project offline.
 
-    This tool is designed for CSMs and users who need to understand existing projects
-    without warehouse access. It performs efficient project structure analysis including:
+#     This tool is designed for CSMs and users who need to understand existing projects
+#     without warehouse access. It performs efficient project structure analysis including:
 
-    **Project Structure Analysis:**
-    - Reads pb_project.yaml and extracts model_folders configuration
-    - Scans YAML files within the specified model_folders only
-    - Provides project config metadata and file inventory
-    - Returns comprehensive project summary and statistics
+#     **Project Structure Analysis:**
+#     - Reads pb_project.yaml and extracts model_folders configuration
+#     - Scans YAML files within the specified model_folders only
+#     - Provides project config metadata and file inventory
+#     - Returns comprehensive project summary and statistics
 
 
-    **Use Cases:**
-    - Understanding existing customer projects during support
-    - Debugging project configuration issues offline
-    - Getting project overview without running pb commands
-    - Validating project structure before warehouse setup
+#     **Use Cases:**
+#     - Understanding existing customer projects during support
+#     - Debugging project configuration issues offline
+#     - Getting project overview without running pb commands
+#     - Validating project structure before warehouse setup
 
-    **Requirements:**
-    - Project path must contain pb_project.yaml in the root
-    - Files are read-only (no warehouse access needed)
-    - Supports projects with any YAML filename variations
-    - Requires basic profiles knowledge to interpret results properly
-      (call about_profiles() first if using via workflow_guide)
+#     **Requirements:**
+#     - Project path must contain pb_project.yaml in the root
+#     - Files are read-only (no warehouse access needed)
+#     - Supports projects with any YAML filename variations
+#     - Requires basic profiles knowledge to interpret results properly
+#       (call about_profiles() first if using via workflow_guide)
       
-    **Before Calling:**
-    - This should never be the first tool call in a session. ENSURE YOU HAVE CALLED about_profiles(topic="profiles") before you call this tool.
+#     **Before Calling:**
+#     - This should never be the first tool call in a session. ENSURE YOU HAVE CALLED about_profiles(topic="profiles") before you call this tool.
 
-    Args:
-        project_path: Path to the profiles project directory (must contain pb_project.yaml)
+#     Args:
+#         project_path: Path to the profiles project directory (must contain pb_project.yaml)
 
-    Returns:
-        dict: Targeted analysis results with structure info, validation status, errors, and warnings
+#     Returns:
+#         dict: Targeted analysis results with structure info, validation status, errors, and warnings
 
-    Example:
-        result = analyze_and_validate_project("/path/to/customer-profiles-project")
-        # Returns focused breakdown of relevant project configuration and YAML validation
-    """
-    return get_app_context(ctx).profiles.analyze_and_validate_project(project_path)
+#     Example:
+#         result = analyze_and_validate_project("/path/to/customer-profiles-project")
+#         # Returns focused breakdown of relevant project configuration and YAML validation
+#     """
+#     return get_app_context(ctx).profiles.analyze_and_validate_project(project_path)
 
 
 @mcp.tool()

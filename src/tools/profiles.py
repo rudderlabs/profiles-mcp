@@ -1140,7 +1140,7 @@ For more information, refer to the RudderStack Profiles documentation.
             "add_date_filtering",
             "run_pilot_test",
             "create_propensity_model",
-            "analyze_existing_project",
+            # "analyze_existing_project",
         ]
 
         guide["validation_status"] = "ERROR"
