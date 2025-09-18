@@ -722,6 +722,9 @@ def analyze_and_validate_project(ctx: Context, project_path: str) -> dict:
     - Supports projects with any YAML filename variations
     - Requires basic profiles knowledge to interpret results properly
       (call about_profiles() first if using via workflow_guide)
+      
+    **Before Calling:**
+    - This should never be the first tool call in a session. ENSURE YOU HAVE CALLED about_profiles(topic="profiles") before you call this tool.
 
     Args:
         project_path: Path to the profiles project directory (must contain pb_project.yaml)

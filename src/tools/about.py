@@ -1090,6 +1090,57 @@ These predictive capabilities enable data-driven decision-making by calculating 
 - **Increased conversions**: Prioritize leads with a higher propensity to convert (classification model)
 - **Improved resource allocation**: Focus resources on high-value user segments (regression/classification model, depending on the use-case)
 
+## 🚨 **CRITICAL: Date Handling Rules for Propensity Models**
+
+### **MANDATORY: Always Use Macros for Date Functions**
+
+**NEVER use these directly in entity_vars:**
+- ❌ `current_date()` or `CURRENT_DATE()`
+- ❌ `current_timestamp()` or `CURRENT_TIMESTAMP()`
+- ❌ `datediff()` without macros
+- ❌ `sysdate`, `getdate()`, `now()`
+- ❌ Any hardcoded date functions
+
+**ALWAYS use macros instead:**
+- ✅ `{{macro_datediff('column_name')}}` - for days since a date
+- ✅ `{{macro_datediff_n('column_name', 'days')}}` - for date range filters
+
+### **Why Macros are MANDATORY:**
+1. **Warehouse Portability**: Macros handle syntax differences between Snowflake/BigQuery
+2. **Begin Time Support**: Macros automatically respect `pb run --begin_time` flag
+3. **Training Consistency**: Ensures consistent date calculations across training/prediction
+4. **Error Prevention**: Avoids runtime failures from warehouse-specific functions
+
+### **Common Mistakes to AVOID:**
+
+```yaml
+# ❌ WRONG - Direct date function (WILL FAIL)
+entity_var:
+  name: days_since_last_seen
+  select: "datediff('day', max(timestamp), current_date())"
+  from: inputs/events
+
+# ✅ CORRECT - Using macro
+entity_var:
+  name: days_since_last_seen
+  select: "{{macro_datediff('max(timestamp)')}}"
+  from: inputs/events
+
+# ❌ WRONG - Direct date filter (WILL FAIL)
+entity_var:
+  name: recent_revenue
+  select: sum(amount)
+  from: inputs/orders
+  where: "datediff('day', order_date, current_date()) <= 30"
+
+# ✅ CORRECT - Using macro for date filter
+entity_var:
+  name: recent_revenue
+  select: sum(amount)
+  from: inputs/orders
+  where: "{{macro_datediff_n('order_date', '30')}}"
+```
+
 ## Prerequisites
 - An active RudderStack Profiles project (v0.22.0 or above) using Snowflake or BigQuery. If an older version, you can upgrade to v0.22.0 by running `pip install --upgrade profiles-rudderstack`
 - Install the profiles-mlcorelib library: `pip install --upgrade profiles-mlcorelib`
@@ -1101,6 +1152,7 @@ These predictive capabilities enable data-driven decision-making by calculating 
 python_requirements:
   - profiles_mlcorelib>=0.8.1
 ```
+- **MANDATORY**: Define date macros in macros.yaml (see about_profiles(topic="macros"))
 
 ## Project Setup Steps
 
@@ -1250,12 +1302,28 @@ models:
 - **ignore_features**: Features to exclude from model
 - **inputs**: List of entity_vars to use for training in the format of entity/entity_key/entity_var_name
 
-## Common Pitfalls
-- Propensity model can refer to only those entity_vars listed in the inputs section
-- Entity_vars must not use current_timestamp() - use datediff macros instead
-- Features from static ETL tables without history will cause training issues
-- Propensity models are NOT supported on profiles cohorts - use eligible_users instead
-- All entity_vars in eligible_users clause must be listed in inputs
+## Common Pitfalls & How to Fix Them
+
+### 1. **Date Function Errors (MOST COMMON)**
+- **Problem**: Using `current_date()`, `current_timestamp()`, or direct `datediff()` in entity_vars
+- **Solution**: ALWAYS use macros: `{{macro_datediff()}}` or `{{macro_datediff_n()}}`
+- **Validation**: Run `validate_propensity_model_config()` before `pb run` to catch these errors
+
+### 2. **Missing Inputs**
+- **Problem**: Propensity model can only use entity_vars listed in the inputs section
+- **Solution**: Add ALL required entity_vars to the inputs list, including those in eligible_users
+
+### 3. **Static Table Features**
+- **Problem**: Features from static ETL tables without history cause overconfident models
+- **Solution**: Only use features from event stream sources (is_event_stream: true)
+
+### 4. **Cohort Usage**
+- **Problem**: Propensity models are NOT supported on profiles cohorts
+- **Solution**: Use eligible_users clause instead to define your user subset
+
+### 5. **Warehouse-Specific Functions**
+- **Problem**: Using Snowflake-specific or BigQuery-specific date functions
+- **Solution**: Use macros for warehouse portability
 
 
 ## Output Structure
