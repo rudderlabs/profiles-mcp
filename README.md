@@ -67,6 +67,38 @@ The MCP Server provides following categories of tools:
 * Query tools. Example are `run_query`, `input_table_suggestions` etc. These use warehouse connectors (Snowflake & BigQuery) and can be used to run queries directly on the warehouse
 * Profiles utility tools. Example are `get_profiles_output_details`, `get_existing_connections` etc, which look at the yaml files, output files, siteconfig etc and provide required context to the AI agent
 
+## Company Context Generation
+
+The profiles-mcp service now includes company context generation functionality for enhanced AI assistance in containerized environments. This feature is designed for use with remote VS Code instances launched via the rudder-sources service.
+
+### Features:
+- **Automated company research**: Uses Tavily web search to gather company information
+- **AI-powered context generation**: Creates comprehensive company-specific guidance using Anthropic Claude (with OpenAI fallback)
+- **Intelligent caching**: S3-based caching to avoid regenerating context for the same company
+- **Cline integration**: Automatically updates `.clinerules` to provide AI assistants with company context
+
+### Usage in Container Environment:
+The company context generation is automatically triggered when launching remote VS Code instances through the rudder-sources service. The process:
+
+1. **Check S3 cache** for existing company context
+2. **Download existing context** if available, or **generate new context** using web search + AI
+3. **Update Cline rules** to reference the company context for AI assistance
+4. **Upload context to S3** for future reuse
+
+### Environment Variables:
+- `TAVILY_API_KEY`: Required for web search functionality
+- `ANTHROPIC_API_KEY`: Primary AI service for context generation
+- `OPENAI_API_KEY`: Backup AI service
+
+### Manual Usage:
+For standalone usage outside of the container environment:
+
+```bash
+python scripts/generate_company_context.py "Company Name" \
+  --output-dir /path/to/output \
+  --clinerules-path /path/to/clinerules.md
+```
+
 ## Key components:
 1. **Multi-warehouse support**: Factory-pattern warehouse connectors for Snowflake and BigQuery that connect using credentials provided during setup. The connection should be to the same warehouse where the profiles project will be built, but doesn't need to be in the same database/schema as the input or output data.
 2. **Unified warehouse interface**: All warehouse operations use the same API regardless of the underlying warehouse type
