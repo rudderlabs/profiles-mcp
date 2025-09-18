@@ -1211,9 +1211,41 @@ var_groups:
 2. Use features derived from event stream datasources (from input sources with is_event_stream: true). Features from static ETL tables without history will result in overconfident models.
 
 ### Step 4: Set the Prediction Window
-The prediction window is the time period for predicting future user state.
 
-#### Common Windows by Use Case:
+**🤖 AI UNDERSTANDING REQUIRED: Feature Date vs Label Date**
+
+Propensity models use temporal separation between feature extraction and label measurement:
+- **Feature Date (T0)**: When user features/behavior are captured
+- **Label Date (T0 + predict_window_days)**: When outcome is measured
+- **eligible_users condition applies at Feature Date**, not Label Date
+
+**Key for AI: The eligible_users filter selects users at T0, but the model predicts their behavior at T0+N days**
+
+#### **AI Decision Principles & Examples**
+
+When suggesting predict_window_days and eligible_users, consider these contextual examples:
+
+**Early Lifecycle Value Prediction (typical pattern)**
+- Context: User wants to predict new user value/LTV
+- Example approach: `eligible_users: days_since_account_creation <= 7`, `predict_window_days: 30`
+- Reasoning: Capture first-week behavior to predict 30-day future value
+- Adapt based on: User's actual onboarding timeline and available tenure features
+
+**Activity-Based Risk Prediction (typical pattern)**
+- Context: User wants churn/engagement prediction
+- Example approach: `eligible_users: days_since_last_seen <= 7`, `predict_window_days: 14`
+- Reasoning: Focus on recently active users to predict near-term behavior
+- Adapt based on: User's engagement cycle and available activity features
+
+**Monetization Opportunity Prediction (typical pattern)**
+- Context: User wants to identify conversion opportunities
+- Example approach: `eligible_users: days_since_signup <= 14 AND revenue = 0`, `predict_window_days: 30`
+- Reasoning: Target new non-paying users to predict conversion likelihood
+- Adapt based on: User's conversion funnel timing and available value features
+
+**Key principle**: Use these as starting points, then adapt based on the user's specific business context, available entity_vars, and data patterns revealed through analysis.
+
+#### **Common Windows by Use Case**
 - **LTV (new users)**: 30 days - optimizing for new user campaigns
 - **LTV (retention)**: 90 days - subscription retargeting
 - **Churn (high engagement)**: 7 days - gaming, daily active apps
@@ -1221,17 +1253,37 @@ The prediction window is the time period for predicting future user state.
 - **Lead Score**: 7 days - quick conversion decisions 
 
 ### Step 5: Define Eligible Users
-Eligible users are the subset used for model training. This is a SQL WHERE clause on the C360 table.
+
+**🤖 AI GUIDANCE: eligible_users determines training population at Feature Date (T0)**
 
 #### Requirements:
 1. All features in the clause must be defined as entity_vars with is_feature: true (default)
 2. All referenced features must be in the inputs list
 
-#### Common Patterns:
-- **LTV (new users)**: `days_since_account_creation <= 7`
-- **LTV (retention)**: `days_since_last_seen <= 30 AND has_active_subscription = 1`
-- **Churn**: `days_since_last_seen <= 7`
-- **Lead Score**: `days_since_account_creation <= 7 AND is_payer = 0`
+#### **Common Patterns & Contextual Adaptation**
+
+**New User Value Examples:**
+- `days_since_account_creation <= 7` (first week behavior)
+- `days_since_signup <= 14 AND revenue = 0` (early non-paying period)
+- Adapt timing based on user's actual onboarding flow
+
+**Activity-Based Examples:**
+- `days_since_last_seen <= 7` (recently active users)
+- `days_since_last_session <= 30 AND total_sessions >= 5` (engaged but not recent)
+- Adapt thresholds based on user's engagement patterns
+
+**Conversion/Monetization Examples:**
+- `is_trial_user = 1 AND days_until_trial_end <= 7` (trial ending soon)
+- `subscription_status = 'freemium' AND days_since_signup >= 30` (established free users)
+- Adapt based on user's business model and conversion funnel
+
+**Contextual Adaptation Guidelines:**
+1. **Examine available entity_vars** to understand what time/value features exist
+2. **Use `run_query()` to analyze data distributions** and validate realistic thresholds
+3. **Consider business context** - subscription vs transactional, B2B vs B2C timing
+4. **Match prediction window to action timeline** - when does the business need to act?
+
+These examples provide starting points, but always adapt based on the specific user's data and business context.
 
 
 ### Step 6: Name Output Features
