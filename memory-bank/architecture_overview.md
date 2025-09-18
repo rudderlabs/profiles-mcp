@@ -14,6 +14,7 @@ Profiles MCP is a Model Context Protocol (MCP) server designed to facilitate bui
 - **Documentation Integration**: RAG-powered documentation and FAQ search
 - **Direct Warehouse Access**: Real-time SQL execution and data analysis (Snowflake & BigQuery)
 - **Quality Assurance**: Multi-layer validation to prevent AI hallucination
+- **Company Context Generation**: Automated company research and AI-powered context generation for enhanced containerized VS Code environments
 
 ### High-Level Architecture
 
@@ -50,7 +51,8 @@ The system operates through a **mandatory workflow orchestration** approach that
 ```
 profiles-mcp/
 ├── scripts/
-│   └── start.sh                 # Entry point script
+│   ├── start.sh                        # Entry point script
+│   └── generate_company_context.py     # Company context generation CLI
 ├── src/
 │   ├── main.py                  # FastMCP server setup
 │   ├── constants.py             # Configuration constants
@@ -648,4 +650,189 @@ The validation system implements multiple layers of quality control:
 4. **Sequence Validation**: Enforces proper workflow phase ordering
 
 This comprehensive validation approach significantly reduces configuration errors and improves success rates.
+
+---
+
+## 10. Company Context Generation
+
+### Overview
+
+The system includes an autonomous company context generation feature designed for containerized VS Code environments launched through the rudder-sources service. This functionality enhances AI assistant performance by providing company-specific context about business models, entities, and Profiles use cases.
+
+### Architecture
+
+```mermaid
+flowchart TD
+    A[rudder-sources Service] --> B[Container Launch]
+    B --> C[main.sh Execution]
+    C --> D{Check S3 Cache}
+    D -->|Context Exists| E[Download from S3]
+    D -->|No Context| F[Generate New Context]
+    
+    F --> G[Tavily Web Search]
+    G --> H[AI Analysis]
+    H --> I{Anthropic Available?}
+    I -->|Yes| J[Claude Analysis]
+    I -->|No| K[OpenAI Fallback]
+    J --> L[Create Context File]
+    K --> L
+    
+    E --> M[Update Cline Rules]
+    L --> M
+    M --> N[Start VS Code]
+    
+    O[sidecar.sh] --> P[Upload to S3]
+    
+    style F fill:#fff3e0
+    style J fill:#e8f5e8
+    style P fill:#e3f2fd
+```
+
+### Components
+
+#### Company Context CLI Script
+**Location**: `scripts/generate_company_context.py`
+
+**Features**:
+- **Tavily Integration**: Web search for company information
+- **Anthropic Claude Primary**: Advanced AI analysis with retry logic (3 attempts, 2s/4s backoff)
+- **OpenAI Fallback**: Backup AI service if Anthropic fails
+- **Cline Integration**: Automatic `.clinerules` file updates
+- **Fallback Template**: Basic context if all AI services fail
+
+**Usage**:
+```bash
+python scripts/generate_company_context.py "Company Name" \
+  --output-dir /path/to/output \
+  --clinerules-path /path/to/clinerules.md
+```
+
+#### Container Integration Scripts
+
+**main.sh Enhancements**:
+- **S3 Cache Check**: Downloads existing context if available
+- **Context Generation**: Calls Python script for new companies
+- **Cline Rules Update**: Automatically configures AI assistant
+- **Error Handling**: Graceful fallbacks for service failures
+
+**sidecar.sh Enhancements**:
+- **Automatic Upload**: Uploads generated context to S3 for caching
+- **S3 Path Structure**: `company-contexts/{company}_context.md`
+- **Continuous Sync**: Uploads context alongside project files
+
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant RS as rudder-sources
+    participant Main as main.sh
+    participant S3 as S3 Storage
+    participant Script as generate_company_context.py
+    participant Tavily as Tavily API
+    participant Claude as Anthropic Claude
+    participant Cline as VS Code/Cline
+    participant Side as sidecar.sh
+
+    RS->>Main: Launch with ORGANIZATION_NAME
+    Main->>S3: Check for existing context
+    
+    alt Context exists in S3
+        S3-->>Main: Download context file
+        Main->>Cline: Update .clinerules
+    else No context in S3
+        Main->>Script: generate_company_context.py
+        Script->>Tavily: Search company info
+        Tavily-->>Script: Company research data
+        Script->>Claude: Generate context (retry logic)
+        Claude-->>Script: AI-generated context
+        Script->>Main: Context file created
+        Script->>Cline: Update .clinerules
+    end
+    
+    Main->>Cline: Launch VS Code with context
+    
+    loop During session
+        Side->>S3: Upload context to cache
+    end
+```
+
+### Context Generation Process
+
+#### Research Phase
+1. **Web Search**: Tavily API searches for company information
+2. **Data Aggregation**: Compile business model, products, services data
+3. **Context Preparation**: Format research for AI analysis
+
+#### AI Analysis Phase
+1. **Primary Path**: Anthropic Claude analysis with structured prompts
+   - 3 retry attempts with exponential backoff (2s, 4s)
+   - Company-specific entity modeling recommendations
+   - Profiles feature suggestions based on business model
+   
+2. **Fallback Path**: OpenAI GPT-4 if Anthropic fails
+   - Same structured prompts and analysis approach
+   - Maintains consistency in output format
+
+3. **Emergency Fallback**: Template-based context
+   - Generic but functional guidance
+   - Ensures system never fails completely
+
+#### Output Generation
+1. **Context File Creation**: `{company}_context.md` with comprehensive guidance
+2. **Cline Rules Update**: Automatically reference context in `.clinerules`
+3. **S3 Upload**: Cache for future container launches
+
+### Integration Points
+
+#### Environment Variables
+```bash
+# Required for context generation
+TAVILY_API_KEY=your_tavily_key           # Web search
+ANTHROPIC_API_KEY=your_anthropic_key     # Primary AI
+OPENAI_API_KEY=your_openai_key          # Backup AI
+```
+
+#### Go Service Integration
+The rudder-sources Go service must pass `ORGANIZATION_NAME` as a template parameter to both main.sh and sidecar.sh scripts.
+
+#### S3 Storage Structure
+```
+s3://bucket/
+├── project-files/              # Existing project storage
+└── company-contexts/           # New context storage
+    ├── shopify_context.md
+    ├── uber_context.md
+    └── meta_platforms_context.md
+```
+
+### Performance Considerations
+
+#### Caching Strategy
+- **24-hour Cache Validity**: Balance freshness with performance
+- **Smart Cache Keys**: Normalize company names for consistency
+- **Multi-Customer Aware**: Handle multiple organizations efficiently
+
+#### Retry Logic
+- **Anthropic Preferred**: 3 attempts with exponential backoff
+- **Automatic Fallback**: Seamless transition to OpenAI
+- **Graceful Degradation**: Always produces usable output
+
+#### Error Handling
+- **Service Failures**: Continue with fallback templates
+- **Network Issues**: Retry with backoff strategies
+- **Invalid Responses**: Validate and retry or fallback
+
+### Quality Assurance
+
+#### Content Validation
+- **Business Model Focus**: Ensures relevant entity recommendations
+- **Profiles Alignment**: Context specifically tailored for RudderStack Profiles
+- **Actionable Guidance**: Practical implementation recommendations
+
+#### AI Prompt Engineering
+- **Structured Outputs**: Consistent format across AI providers
+- **Company Specificity**: Avoids generic recommendations
+- **Technical Accuracy**: Grounded in RudderStack Profiles concepts
+
+This company context generation system significantly enhances the AI assistant experience in containerized environments by providing relevant, company-specific guidance for building Profiles projects.
 
