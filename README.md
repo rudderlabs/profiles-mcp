@@ -46,6 +46,9 @@ Once configured, you can use natural language to build a profiles project throug
 
 While the chat experience will work with most LLMs, we recommend using claude 4.0 class of models (ex: sonnet-4)
 
+### Amazon Bedrock Support (NEW)
+For organizations requiring PII data protection, Profiles MCP now supports Amazon Bedrock Claude models. This ensures your data never leaves your AWS infrastructure. See [Bedrock Setup Guide](docs/bedrock-setup.md) for configuration instructions.
+
 ## Debug:
 
 In Cursor MCP settings, you should see the profiles mcp tool active, with a green button indicating the MCP tools are available. See the below image for reference:
