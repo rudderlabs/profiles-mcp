@@ -54,7 +54,7 @@ class About:
             virtual_env_section = """### 1. No virtual environment setup required
 
 The required Python packages
-(profiles-rudderstack, profiles-mlcorelib) should already be available.
+(profiles-rudderstack, profiles_mlcorelib) should already be available.
 
 **No virtual environment setup required** - you can directly use the `pb` CLI tool."""
         else:
@@ -66,7 +66,7 @@ source .venv/bin/activate
 
 # Install required packages
 pip install profiles-rudderstack
-pip install profiles-mlcorelib>=0.8.1
+pip install profiles_mlcorelib>=0.8.1
 ```"""
         
         return virtual_env_section
@@ -1143,7 +1143,7 @@ entity_var:
 
 ## Prerequisites
 - An active RudderStack Profiles project (v0.22.0 or above) using Snowflake or BigQuery. If an older version, you can upgrade to v0.22.0 by running `pip install --upgrade profiles-rudderstack`
-- Install the profiles-mlcorelib library: `pip install --upgrade profiles-mlcorelib`
+- Install the profiles_mlcorelib library: `pip install --upgrade profiles_mlcorelib`
 - Python requirements:
   - BigQuery: Python 3.9.0 to 3.11.10
   - Snowflake: Python ≥ 3.9.0 and < 3.11.0
@@ -1152,6 +1152,7 @@ entity_var:
 python_requirements:
   - profiles_mlcorelib>=0.8.1
 ```
+
 - **MANDATORY**: Define date macros in macros.yaml (see about_profiles(topic="macros"))
 
 ## Project Setup Steps
