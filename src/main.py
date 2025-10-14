@@ -549,12 +549,12 @@ def setup_new_profiles_project(ctx: Context, project_path: str) -> dict:
     2. Checks if Python 3.10 is installed.
     3. Creates a Python virtual environment (.venv) in the project directory.
     4. Installs the profiles-rudderstack package in the virtual environment.
-    5. Installs the profiles-mlcorelib package in the virtual environment.
+    5. Installs the profiles_mlcorelib package in the virtual environment.
 
     **Smart Skipping**: The tool intelligently skips steps that have already been completed, such as:
     - Existing virtual environment that's working
     - Already installed profiles-rudderstack package
-    - Already installed profiles-mlcorelib package
+    - Already installed profiles_mlcorelib package
 
     **Use Cases:**
     - Setting up a new profiles project from scratch

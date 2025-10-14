@@ -8,3 +8,6 @@ profiles-mcp.log
 tests/sample_conv.md
 .DS_Store
 .idea
+analyses
+tests/data/*
+templates

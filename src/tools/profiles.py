@@ -524,13 +524,13 @@ class ProfilesTools:
                     "skip_message": f"Package 'profiles-rudderstack' already installed in the virtual environment at '{venv_pb}'",
                 },
                 {
-                    "cmd": [venv_pip_to_use, "install", "profiles-mlcorelib"],
-                    "desc": "Install 'profiles-mlcorelib' package using pip",
-                    "success_message": "Package 'profiles-mlcorelib' installed in the virtual environment",
+                    "cmd": [venv_pip_to_use, "install", "profiles_mlcorelib"],
+                    "desc": "Install 'profiles_mlcorelib' package using pip",
+                    "success_message": "Package 'profiles_mlcorelib' installed in the virtual environment",
                     "pre_check": lambda: self._check_package_installed(
                         venv_bin_dir, "profiles_mlcorelib"
                     ),
-                    "skip_message": f"Package 'profiles-mlcorelib' already installed in the virtual environment",
+                    "skip_message": f"Package 'profiles_mlcorelib' already installed in the virtual environment",
                 },
             ]
 
@@ -633,7 +633,7 @@ This project is configured for a kubernetes pod environment where Python package
 ### Running in Kubernetes Pod Environment
 
 Since you're running in a kubernetes pod, the required Python packages 
-(profiles-rudderstack, profiles-mlcorelib) should already be available in your container.
+(profiles-rudderstack, profiles_mlcorelib) should already be available in your container.
 
 ## Getting Started
 
