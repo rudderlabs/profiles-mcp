@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$SCRIPT_DIR"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -126,6 +130,36 @@ print_status "Updating MCP configuration..."
 if ! python3 scripts/update_mcp_config.py; then
     print_error "Failed to update MCP configuration"
     exit 1
+fi
+
+# Check if Bedrock configuration is present and configure if needed
+if [ -n "${BEDROCK_API_KEY}" ] || [ -n "${BEDROCK_AUTH_METHOD}" ]; then
+    print_status "Detected Bedrock configuration"
+    
+    # Create the wrapper script path
+    WRAPPER_SCRIPT="$PROJECT_ROOT/scripts/bedrock_anthropic_wrapper.sh"
+    
+    # Check if wrapper script exists
+    if [ ! -f "$WRAPPER_SCRIPT" ]; then
+        print_error "Bedrock wrapper script not found at $WRAPPER_SCRIPT"
+        exit 1
+    fi
+    
+    # Make wrapper executable
+    chmod +x "$WRAPPER_SCRIPT"
+    
+    # Only configure Cline if not in container
+    if [ ! -f /.dockerenv ] && [ "${IS_CLOUD_BASED}" != "true" ]; then
+        print_status "Setting up Cline integration..."
+        # Update Cline configuration to use Bedrock wrapper
+        if ! python3 scripts/update_cline_for_bedrock.py; then
+            print_warning "Could not auto-configure Cline for Bedrock. You may need to configure manually."
+        else
+            print_status "Cline configured to use Bedrock"
+        fi
+    else
+        print_status "Container environment detected - Cline configuration skipped"
+    fi
 fi
 
 # Ensure scripts/start.sh is executable

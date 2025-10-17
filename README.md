@@ -33,6 +33,32 @@ This will:
 
 2. Restart Cursor to apply changes
 
+## Using Amazon Bedrock (Optional)
+
+To use Amazon Bedrock instead of Anthropic, simply add these to your `.env` file:
+
+```bash
+# For API key authentication (simplest)
+BEDROCK_API_KEY="your_api_key_here"
+BEDROCK_AUTH_METHOD="api_key"  # Explicitly set to api_key
+
+# Optional: specify model and region
+BEDROCK_MODEL_ID="anthropic.claude-3-sonnet-20240229-v1:0"
+AWS_DEFAULT_REGION="us-east-1"
+```
+
+Then run the normal setup:
+```bash
+./setup.sh
+```
+
+The setup script will automatically detect Bedrock configuration and set up Cline to use it.
+
+**Other authentication methods:**
+- **IAM Role**: Set `BEDROCK_AUTH_METHOD="iam_role"` (auto-detected on EC2/ECS)
+- **AWS SSO**: Set `BEDROCK_AUTH_METHOD="sso"` and `AWS_SSO_PROFILE="your-profile"`
+- **Assume Role**: Set `BEDROCK_AUTH_METHOD="assume_role"` and `BEDROCK_ASSUME_ROLE_ARN="arn:..."`
+
 ## Usage
 
 Once configured, you can use natural language to build a profiles project through chat interface in AI clients such as cursor:

@@ -50,11 +50,18 @@ The system operates through a **mandatory workflow orchestration** approach that
 ```
 profiles-mcp/
 ├── scripts/
-│   └── start.sh                 # Entry point script
+│   ├── start.sh                 # Entry point script
+│   ├── bedrock_anthropic_wrapper.sh  # Bedrock wrapper for Cline
+│   ├── update_cline_for_bedrock.py  # Auto-configure Cline
+│   ├── test_bedrock.py          # Bedrock integration test
+│   └── env_setup.py             # Environment setup (preserves custom vars)
 ├── src/
 │   ├── main.py                  # FastMCP server setup
 │   ├── constants.py             # Configuration constants
 │   ├── logger.py                # Centralized logging
+│   ├── bedrock/                 # Bedrock integration
+│   │   ├── __init__.py         # Module exports
+│   │   └── cline_adapter.py    # Main Bedrock adapter with metrics
 │   ├── tools/                   # Business logic implementations
 │   │   ├── about.py            # Documentation provider
 │   │   ├── faq.py              # FAQ search
@@ -648,4 +655,106 @@ The validation system implements multiple layers of quality control:
 4. **Sequence Validation**: Enforces proper workflow phase ordering
 
 This comprehensive validation approach significantly reduces configuration errors and improves success rates.
+
+---
+
+## 10. Amazon Bedrock Integration
+
+### Overview
+
+The system supports Amazon Bedrock as an alternative to Anthropic's Claude API through a transparent wrapper mechanism that intercepts and redirects API calls.
+
+### Architecture
+
+```mermaid
+flowchart TD
+    A[Cursor/Cline] --> B[bedrock_anthropic_wrapper.sh]
+    B --> C[cline_adapter.py]
+    C --> D{Auth Method}
+    D -->|API Key| E[BedrockAPIKeyClient]
+    D -->|IAM| F[boto3 client]
+    E --> G[Bedrock API]
+    F --> G
+    G --> H[Response]
+    H --> C
+    C --> B
+    B --> A
+```
+
+### Key Components
+
+#### 1. **Wrapper Script** (`scripts/bedrock_anthropic_wrapper.sh`)
+- Entry point that Cline calls instead of Anthropic CLI
+- Loads environment variables from `.env`
+- Activates virtual environment
+- Passes control to Python adapter
+
+#### 2. **Cline Adapter** (`src/bedrock/cline_adapter.py`)
+- Main adapter containing all Bedrock integration logic
+- Handles request/response conversion between Anthropic and Bedrock formats
+- Includes built-in metrics collection
+- Supports both API key and IAM authentication
+
+#### 3. **Metrics Collection**
+- Tracks usage by API key prefix
+- Records token usage (input/output)
+- Monitors performance (latency, slow requests)
+- Provides usage summaries for billing and monitoring
+
+### Configuration
+
+#### Environment Variables
+```bash
+# Required for Bedrock
+BEDROCK_API_KEY="your_api_key_here"
+BEDROCK_AUTH_METHOD="api_key"  # Options: api_key, iam_role, sso, assume_role
+
+# Optional
+BEDROCK_MODEL_ID="anthropic.claude-3-sonnet-20240229-v1:0"
+AWS_DEFAULT_REGION="us-east-1"
+```
+
+#### Auto-Detection in Setup
+The `setup.sh` script automatically:
+1. Detects Bedrock configuration in `.env`
+2. Updates Cline settings to use the wrapper
+3. Skips Cline configuration in container environments
+
+### Authentication Methods
+
+| Method | Configuration | Use Case |
+|--------|--------------|----------|
+| **API Key** | `BEDROCK_AUTH_METHOD="api_key"` + `BEDROCK_API_KEY` | Simplest, for individual developers |
+| **IAM Role** | `BEDROCK_AUTH_METHOD="iam_role"` | EC2/ECS instances with IAM roles |
+| **SSO** | `BEDROCK_AUTH_METHOD="sso"` + `AWS_SSO_PROFILE` | Corporate environments with SSO |
+| **Assume Role** | `BEDROCK_AUTH_METHOD="assume_role"` + `BEDROCK_ASSUME_ROLE_ARN` | Cross-account access |
+
+### Metrics and Monitoring
+
+The adapter collects:
+- **Usage Metrics**: Requests per API key, model, total tokens
+- **Performance Metrics**: Average latency, P95 latency, slow request count
+- **Error Tracking**: Failed requests with error details
+
+Example metrics output:
+```json
+{
+    "uptime_seconds": 3600,
+    "total_requests": 150,
+    "total_tokens": 45000,
+    "avg_latency_ms": 1200,
+    "p95_latency_ms": 2500,
+    "slow_requests": 3,
+    "requests_by_key": {
+        "requests_by_key_brk_1234...": 100
+    }
+}
+```
+
+### Important Implementation Details
+
+1. **Environment Preservation**: The `env_setup.py` script preserves all custom environment variables including Bedrock configuration
+2. **Container Support**: Automatically detects container environments and skips Cline-specific configuration
+3. **Error Handling**: Provides Cline-compatible error responses for seamless integration
+4. **Testing**: Includes `scripts/test_bedrock.py` for verification
 

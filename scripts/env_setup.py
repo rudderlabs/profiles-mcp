@@ -58,7 +58,7 @@ def main():
             if var_meta.get("required", True) and var not in env:
                 missing_required.append(var)
 
-    # Check auth method variables - remove Snowflake auth check
+    # Start with all existing values to preserve them
     values = env.copy()
 
     # Prompt for RudderStack variables
@@ -90,13 +90,21 @@ def main():
             else:
                 values[var] = env.get(var, default_value)
 
-    # Write to .env
+    # Write to .env - PRESERVE ALL EXISTING VARIABLES
     print("\nWriting values to .env...")
     with open(ENV_FILE, "w") as f:
+        # First write the managed variables
         for group_name, var_metas in ENV_GROUPS.items():
             for var_meta in var_metas:
                 var = var_meta["name"]
                 f.write(f"{var}={values[var]}\n")
+        
+        # Then write any other variables that were in the original file
+        # This preserves Bedrock config and any other custom variables
+        managed_vars = {var_meta["name"] for group_name, var_metas in ENV_GROUPS.items() for var_meta in var_metas}
+        for key, value in env.items():
+            if key not in managed_vars:
+                f.write(f"{key}={value}\n")
     print(".env file created/updated successfully!\n")
 
 if __name__ == "__main__":
