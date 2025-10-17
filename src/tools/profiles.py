@@ -1035,12 +1035,21 @@ For more information, refer to the RudderStack Profiles documentation.
             "1. Run 'pb compile' first to check generated SQL",
             f"2. Use 'pb run --begin_time' with {current_year} date for pilot",
             "3. Use 'pb run --concurrency 10' for faster runs in Snowflake",
-            "4. Check output tables after successful run",
+            "4. CRITICAL: Extract seq_no from pb run output (look for 'pb run --seq_no N')",
+            "5. If run fails: Fix errors, then retry with 'pb run --seq_no N' (reuses successful models)",
+            "6. Check output tables after successful run",
         ]
         guide["examples"] = [
             "pb compile",
             f"pb run --begin_time '{current_year-1}-{(current_month-2) % 12 + 1:02d}-01T00:00:00Z' --concurrency 10",
+            "# On failure, extract seq_no and retry:",
+            "pb run --seq_no 7  # Uses previous successful models",
         ]
+        guide["critical_warnings"].extend([
+            "🚨 ALWAYS capture seq_no from pb run output",
+            "🚨 On failures, ALWAYS retry with --seq_no (not plain 'pb run')",
+            "🚨 See about_profiles(topic='output') for seq_no extraction details",
+        ])
         return guide
 
     def _handle_create_propensity_model_action(
@@ -1062,7 +1071,14 @@ For more information, refer to the RudderStack Profiles documentation.
             "5. CRITICAL: Use ONLY macros for date calculations - NEVER use current_date() or datediff()",
             "6. PRESENT propensity model label and elgible users conditions to user for approval. Add the config only after the user explicitly approves the label and elgible users conditions",
             "7. MANDATORY: Run validate_propensity_model_config() BEFORE pb run",
+            "8. CRITICAL: Extract seq_no from pb run output for recovery",
+            "9. If run fails: Fix errors, then ALWAYS retry with 'pb run --seq_no N'",
         ]
+        guide["critical_warnings"].extend([
+            "🚨 Propensity models often fail on first run - ALWAYS use --seq_no for retries",
+            "🚨 Extract seq_no immediately from pb run output",
+            "🚨 See about_profiles(topic='output') for seq_no recovery workflow",
+        ])
         return guide
 
     def _handle_analyze_existing_project_action(
@@ -1166,6 +1182,7 @@ For more information, refer to the RudderStack Profiles documentation.
             "🚨 NEVER make autonomous decisions about using input tables and connections - ALWAYS get user confirmation for tables and connections",
             "🚨 NEVER CREATE YAML WITHOUT COMPLETING KNOWLEDGE GATHERING PHASE FIRST",
             "🚨 ALWAYS USE datediff macros to create entity-vars with timestamp filters. NEVER use current_timestamp(), datediff etc directly. Use only through the macros",
+            "🚨 CRITICAL: When pb run fails, ALWAYS extract seq_no and retry with 'pb run --seq_no N' (never plain 'pb run')",
         ]
 
     def _validate_knowledge_phase(
