@@ -5,6 +5,11 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+
+from utils.pb_models_parser import PBModelsParser
+from validators.propensity_validator import PropensityValidator
+        
 
 import yaml
 from constants import PB_SITE_CONFIG_PATH
@@ -1362,7 +1367,62 @@ For more information, refer to the RudderStack Profiles documentation.
         Returns:
             dict: Structured validation results with errors, warnings, and suggestions
         """
-        validator = PropensityValidator(project_path, model_name, warehouse_client)
+
+        # Run pb mcp models command to get the models JSON
+        try:
+            output_file = tempfile.NamedTemporaryFile(
+                mode='w', suffix='.json', delete=False
+            ).name
+            
+            # cmd = f"pb mcp models -p {project_path} --migrate_on_load > {output_file}"
+            cmd = f"/Users/sp/rudderstack/codes/wht/wht mcp models -p {project_path} --migrate_on_load --rpc_python_path /Users/sp/rudderstack/codes/profiles-mcp-test/.venv/bin/python > {output_file}"
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"pb mcp models command failed: {result.stderr}")
+                return {
+                    "model_name": model_name,
+                    "validation_status": "FAILED",
+                    "errors": [{
+                        "type": "PB_COMMAND_FAILED",
+                        "message": f"Failed to run pb mcp models command: {result.stderr}",
+                        "remediation": "Ensure pb CLI is installed and project path is correct"
+                    }],
+                    "warnings": [],
+                    "suggestions": [],
+                    "table_stats": {}
+                }
+            
+            # Parse the JSON output
+            pb_models_data = PBModelsParser.from_json_file(output_file)
+            
+            # Clean up temp file
+            os.unlink(output_file)
+            
+        except Exception as e:
+            logger.error(f"Error running pb mcp models: {e}")
+            return {
+                "model_name": model_name,
+                "validation_status": "FAILED",
+                "errors": [{
+                    "type": "MODELS_PARSE_ERROR",
+                    "message": f"Error parsing models data: {str(e)}",
+                    "remediation": "Check project configuration and pb CLI installation"
+                }],
+                "warnings": [],
+                "suggestions": [],
+                "table_stats": {}
+            }
+        
+        validator = PropensityValidator(
+            project_path, model_name, warehouse_client, pb_models_data
+        )
         return validator.validate()
 
     def fetch_warehouse_credentials(self, connection_name: str) -> dict:
@@ -1489,649 +1549,3 @@ For more information, refer to the RudderStack Profiles documentation.
                 "status": "error",
                 "message": f"Error fetching warehouse credentials: {str(e)}",
             }
-
-
-class PropensityValidator:
-    """
-    Validates propensity model configurations for common pitfalls.
-
-    This class provides a clean, modular approach to validating propensity models
-    with clear separation of concerns and extensible validation rules.
-    """
-
-    def __init__(self, project_path: str, model_name: str, warehouse_client):
-        """Initialize the validator with warehouse client."""
-        self.project_path = project_path
-        self.model_name = model_name
-        self.warehouse_client = warehouse_client
-
-    def validate(self) -> dict:
-        """
-        Main validation entry point for propensity models.
-
-        Args:
-            project_path: Path to the profiles project directory
-            model_name: Name of the propensity model to validate
-            warehouse_client: Warehouse client for data validation queries
-
-        Returns:
-            dict: Structured validation results with errors, warnings, and suggestions
-        """
-        logger.info(f"Validating propensity model: {self.model_name}")
-
-        try:
-            self._initialize_result()
-            self._initialize_configs()
-
-            if not self._validate_model_spec():
-                return self.result
-
-            input_tables_map = self._create_input_tables_map(self.configs["inputs"])
-            entity_vars_map = self._create_entity_vars_map(self.configs["models"])
-
-            if self._has_complex_dependencies(entity_vars_map):
-                self._validate_all_input_tables_fallback(input_tables_map)
-            else:
-                self._validate_model_inputs(input_tables_map, entity_vars_map)
-
-            self._set_final_status()
-
-        except Exception as e:
-            self._handle_validation_error(e)
-
-        return self.result
-
-    def _initialize_result(self) -> None:
-        """Initialize the validation result structure."""
-        self.result = {
-            "model_name": self.model_name,
-            "validation_status": "PASSED",
-            "errors": [],
-            "warnings": [],
-            "suggestions": [],
-            "table_stats": {},
-        }
-
-    def _initialize_configs(self) -> None:
-        """Initialize the configuration files."""
-        utils = ProfilesUtils()
-        self.configs = utils.load_all_configs(self.project_path)
-        self.propensity_model = utils.find_model(
-            self.configs["models"], self.model_name, "propensity"
-        )
-
-    def _validate_model_spec(self) -> bool:
-        """Validate that the propensity model exists."""
-        if not self.propensity_model:
-            self.result["errors"].append(
-                {
-                    "type": "MODEL_NOT_FOUND",
-                    "message": f"Propensity model '{self.model_name}' not found in models configuration",
-                    "remediation": "Verify the model name exists in your profiles.yaml file",
-                }
-            )
-            self.result["validation_status"] = "FAILED"
-            return False
-
-        model_spec = self.propensity_model.get("model_spec")
-        if not model_spec:
-            self.result["errors"].append(
-                {
-                    "type": "MODEL_SPEC_NOT_FOUND",
-                    "message": f"Propensity model '{self.model_name}' has no model_spec defined",
-                    "remediation": "Add a model_spec to the model configuration",
-                }
-            )
-            self.result["validation_status"] = "FAILED"
-            return False
-
-        predict_window_days = model_spec.get("training", {}).get("predict_window_days")
-        if not predict_window_days:
-            self.result["errors"].append(
-                {
-                    "type": "PREDICT_WINDOW_DAYS_NOT_FOUND",
-                    "message": f"Propensity model '{self.model_name}' has no predict_window_days defined",
-                    "remediation": "Add a predict_window_days to the model_spec",
-                }
-            )
-            self.result["validation_status"] = "FAILED"
-            return False
-
-        if predict_window_days <= 0:
-            self.result["errors"].append(
-                {
-                    "type": "PREDICT_WINDOW_DAYS_NOT_POSITIVE",
-                    "message": f"Propensity model '{self.model_name}' has a non-positive predict_window_days: {predict_window_days}",
-                    "remediation": "Set predict_window_days to a positive integer",
-                }
-            )
-            self.result["validation_status"] = "FAILED"
-            return False
-
-        model_inputs = model_spec.get("inputs")
-        if not model_inputs:
-            self.result["errors"].append(
-                {
-                    "type": "NO_INPUTS_DEFINED",
-                    "message": f"Propensity model '{self.model_name}' has no inputs defined",
-                    "remediation": "Add input features to the model_spec.inputs section",
-                }
-            )
-            self.result["validation_status"] = "FAILED"
-            return False
-
-        entity_vars_map = self._create_entity_vars_map(self.configs["models"])
-
-        for input_feature in model_inputs:
-            feature_info = self._parse_feature_reference(input_feature)
-            if not feature_info:
-                self.result["errors"].append(
-                    {
-                        "type": "INVALID_FEATURE_REFERENCE",
-                        "feature": input_feature,
-                        "message": f"Could not parse feature reference: {input_feature}",
-                        "remediation": "Ensure feature follows format: entity/entity_name/feature_name",
-                    }
-                )
-
-            entity_var = entity_vars_map.get(feature_info["feature_name"])
-            if not entity_var:
-                self.result["errors"].append(
-                    {
-                        "type": "NO_ENTITY_VAR_DEFINED",
-                        "feature": input_feature,
-                        "message": f"Entity variable not found for feature: {input_feature}",
-                        "remediation": "Ensure the entity variable is defined in your profiles.yaml file",
-                    }
-                )
-
-            if entity_var.get("is_feature") == False:
-                self.result["errors"].append(
-                    {
-                        "type": "INVALID_ENTITY_VAR_TYPE",
-                        "feature": input_feature,
-                        "message": f"Entity variable '{feature_info['feature_name']}' is not a feature",
-                        "remediation": "Ensure the entity variable is a feature",
-                    }
-                )
-
-        if len(self.result["errors"]) > 0:
-            self.result["validation_status"] = "FAILED"
-            return False
-
-        return True
-
-    def _validate_model_inputs(
-        self, input_tables_map: dict, entity_vars_map: dict
-    ) -> bool:
-        """Validate all input features for the propensity model."""
-        model_inputs = self.propensity_model.get("model_spec").get("inputs")
-
-        for input_feature in model_inputs:
-            logger.info(f"Validating input feature: {input_feature}")
-            self._validate_single_feature(
-                input_feature, input_tables_map, entity_vars_map
-            )
-        return True
-
-    def _validate_single_feature(
-        self, input_feature: str, input_tables_map: dict, entity_vars_map: dict
-    ) -> None:
-        """Validate a single input feature."""
-        feature_info = self._parse_feature_reference(input_feature)
-        entity_var = entity_vars_map.get(feature_info["feature_name"])
-        if entity_var:
-            self._validate_entity_var(entity_var, input_tables_map)
-        else:
-            self.result["warnings"].append(
-                {
-                    "type": "FEATURE_NOT_FOUND",
-                    "feature": input_feature,
-                    "message": f"Entity variable '{feature_info['feature_name']}' not found in models configuration",
-                    "remediation": "Ensure the entity variable is defined in your profiles.yaml file",
-                }
-            )
-
-    def _create_input_tables_map(self, inputs_config: dict) -> dict:
-        """Create a map of input table names to their configurations."""
-        input_map = {}
-        inputs = inputs_config.get("inputs", [])
-        for input_table in inputs:
-            table_name = input_table.get("name")
-            if table_name:
-                input_map[table_name] = input_table
-        return input_map
-
-    def _create_entity_vars_map(self, models_config: dict) -> dict:
-        """Create a map of entity variable names to their configurations."""
-        entity_vars_map = {}
-        var_groups = models_config.get("var_groups", [])
-        for var_group in var_groups:
-            vars_list = var_group.get("vars", [])
-            for var_item in vars_list:
-                entity_var = var_item.get("entity_var")
-                if entity_var and entity_var.get("name"):
-                    entity_vars_map[entity_var["name"]] = entity_var
-        return entity_vars_map
-
-    def _parse_feature_reference(self, feature_ref: str) -> dict:
-        """Parse feature reference like 'entity/user/feature_name'."""
-        parts = feature_ref.split("/")
-        if len(parts) == 3 and parts[0] == "entity":
-            return {
-                "entity_type": parts[0],
-                "entity_name": parts[1],
-                "feature_name": parts[2],
-            }
-        return None
-
-    def _validate_entity_var(self, entity_var: dict, input_tables_map: dict) -> None:
-        """Validate an entity variable feature for propensity model usage."""
-        feature_name = entity_var.get("name")
-        from_table = entity_var.get("from")
-        
-        if not from_table:
-            # Feature doesn't reference an input table directly
-            return
-
-        table_ref = self._parse_table_reference(from_table)
-        if not table_ref:
-            self.result["warnings"].append(
-                {
-                    "type": "INVALID_TABLE_REFERENCE",
-                    "feature": feature_name,
-                    "table_reference": from_table,
-                    "message": f"Could not parse table reference: {from_table}",
-                    "remediation": "Ensure table reference follows format: inputs/table_name",
-                }
-            )
-            return
-
-        input_table_config = input_tables_map.get(table_ref["table_name"])
-        if not input_table_config:
-            self.result["warnings"].append(
-                {
-                    "type": "INPUT_TABLE_NOT_FOUND",
-                    "feature": feature_name,
-                    "table": table_ref["table_name"],
-                    "message": f"Input table '{table_ref['table_name']}' not found in inputs.yaml",
-                    "remediation": "Add the table to inputs.yaml or remove features derived from this table",
-                }
-            )
-            return
-
-        # Perform the main validations
-        self._validate_occurred_at_col(input_table_config, feature_name)
-        self._validate_historic_data(input_table_config, feature_name)
-
-    def _parse_table_reference(self, table_ref: str) -> dict:
-        """Parse table reference like 'inputs/table_name'."""
-        parts = table_ref.split("/")
-        if len(parts) == 2 and parts[0] == "inputs":
-            return {"source_type": parts[0], "table_name": parts[1]}
-        return None
-
-    def _validate_occurred_at_col(
-        self,
-        input_table_config: dict,
-        feature_name: str = None,
-        is_fallback: bool = False,
-    ) -> None:
-        """
-        Validate that input table has occurred_at_col defined.
-
-        Args:
-            input_table_config: Configuration of the input table
-            feature_name: Name of the feature (for direct validation) or None (for fallback)
-            is_fallback: If True, reports as warning; if False, reports as error
-        """
-        app_defaults = input_table_config.get("app_defaults", {})
-        occurred_at_col = app_defaults.get("occurred_at_col")
-        table_name = input_table_config.get("name")
-
-        if not occurred_at_col:
-            if is_fallback:
-                self.result["warnings"].append(
-                    {
-                        "type": "MISSING_OCCURRED_AT_COL",
-                        "table": table_name,
-                        "message": f"Input table '{table_name}' lacks occurred_at_col definition",
-                        "context": "This input table issue may not affect your propensity model if this table doesn't contribute to your model's feature pipeline",
-                        "remediation": "If this table is used by your propensity model features, add occurred_at_col to the table's app_defaults in inputs.yaml",
-                    }
-                )
-            else:
-                self.result["errors"].append(
-                    {
-                        "type": "MISSING_OCCURRED_AT_COL",
-                        "feature": feature_name,
-                        "table": table_name,
-                        "message": f"Input table '{table_name}' lacks occurred_at_col definition",
-                        "remediation": "Add occurred_at_col to the table's app_defaults in inputs.yaml, or remove features from this table",
-                    }
-                )
-
-    def _validate_historic_data(
-        self,
-        input_table_config: dict,
-        feature_name: str = None,
-        is_fallback: bool = False,
-    ) -> None:
-        """
-        Validate historic data availability in the input table.
-
-        Args:
-            input_table_config: Configuration of the input table
-            feature_name: Name of the feature (for direct validation) or None (for fallback)
-            is_fallback: If True, reports as warning; if False, reports as error
-        """
-        app_defaults = input_table_config.get("app_defaults", {})
-        table_name = input_table_config.get("name")
-        db_table_name = app_defaults.get("table")
-        occurred_at_col = app_defaults.get("occurred_at_col")
-
-        if table_name in self.result["table_stats"]:
-            logger.debug(
-                f"Skipping historic data validation for table: {table_name} because it already has stats"
-            )
-            return
-
-        if not occurred_at_col:
-            logger.debug(
-                f"Skipping historic data validation for table: {table_name} because it doesn't have an occurred_at_col"
-            )
-            return
-
-        try:
-            # Use warehouse-independent date difference calculation
-            warehouse_type = getattr(self.warehouse_client, "warehouse_type", "unknown")
-
-            if warehouse_type.lower() == "bigquery":
-                # BigQuery syntax for date difference
-                date_diff_expr = f"DATE_DIFF(DATE(MAX({occurred_at_col})), DATE(MIN({occurred_at_col})), DAY)"
-            elif warehouse_type.lower() == "databricks":
-                # Databricks syntax: only 2 arguments, returns days by default
-                date_diff_expr = f"DATEDIFF(MAX({occurred_at_col}), MIN({occurred_at_col}))"
-            elif warehouse_type.lower() == "redshift":
-                # Redshift syntax: same as Snowflake (3 arguments)
-                date_diff_expr = f"DATEDIFF(day, MIN({occurred_at_col}), MAX({occurred_at_col}))"
-            else:
-                # Snowflake and other warehouses (default)
-                date_diff_expr = (
-                    f"DATEDIFF(day, MIN({occurred_at_col}), MAX({occurred_at_col}))"
-                )
-
-            query = f"""
-            SELECT
-                MIN({occurred_at_col}) as min_date,
-                MAX({occurred_at_col}) as max_date,
-                {date_diff_expr} as date_range_days,
-                COUNT(*) as total_rows
-            FROM {db_table_name}
-            WHERE {occurred_at_col} IS NOT NULL
-            """
-
-            stats_result = self.warehouse_client.raw_query(
-                query, response_type="pandas"
-            )
-            logger.debug(f"Stats result: {db_table_name}, {stats_result}")
-
-            if not stats_result.empty:
-                self._process_table_stats(
-                    stats_result, input_table_config, feature_name, is_fallback
-                )
-
-        except Exception as e:
-            logger.warning(
-                f"Could not validate historic data for table {db_table_name}: {e}"
-            )
-            if is_fallback:
-                self.result["warnings"].append(
-                    {
-                        "type": "FALLBACK_DATA_VALIDATION_SKIPPED",
-                        "table": table_name,
-                        "message": f"Could not validate historic data availability for table '{table_name}': {str(e)}",
-                        "context": "This input table issue may not affect your propensity model if this table doesn't contribute to your model's feature pipeline",
-                        "remediation": "If this table is used by your propensity model features, manually verify it contains sufficient historic data",
-                    }
-                )
-            else:
-                self.result["suggestions"].append(
-                    {
-                        "type": "DATA_VALIDATION_SKIPPED",
-                        "feature": feature_name,
-                        "table": table_name,
-                        "message": f"Could not validate historic data availability: {str(e)}",
-                        "remediation": "Manually verify the table contains sufficient historic data",
-                    }
-                )
-
-    def _process_table_stats(
-        self,
-        stats_result,
-        input_table_config: dict,
-        feature_name: str = None,
-        is_fallback: bool = False,
-    ) -> None:
-        """
-        Process and validate table statistics.
-
-        Args:
-            stats_result: Pandas DataFrame with table statistics
-            input_table_config: Configuration of the input table
-            feature_name: Name of the feature (for direct validation) or None (for fallback)
-            is_fallback: If True, reports as warning; if False, reports as error
-        """
-        stats = stats_result.iloc[0]
-        min_date = stats["MIN_DATE"]
-        max_date = stats["MAX_DATE"]
-        date_range_days = stats["DATE_RANGE_DAYS"] or 0
-        total_rows = stats["TOTAL_ROWS"] or 0
-        table_name = input_table_config.get("name", "unknown_table")
-
-        # Store table statistics
-        self.result["table_stats"][table_name] = {
-            "min_date": str(min_date) if min_date else None,
-            "max_date": str(max_date) if max_date else None,
-            "date_range_days": date_range_days,
-            "total_rows": total_rows,
-            "occurred_at_col": input_table_config.get("app_defaults", {}).get(
-                "occurred_at_col"
-            ),
-        }
-
-        min_required_days = self.propensity_model["model_spec"]["training"][
-            "predict_window_days"
-        ]
-
-        if date_range_days < min_required_days:
-            if is_fallback:
-                self.result["warnings"].append(
-                    {
-                        "type": "FALLBACK_INSUFFICIENT_HISTORIC_DATA",
-                        "table": table_name,
-                        "message": f"Table '{table_name}' has only {date_range_days} days of data (min: {min_date}, max: {max_date}). Minimum {min_required_days} days (i.e., > predict_window_days) is recommended for propensity modeling",
-                        "context": "This input table issue may not affect your propensity model if this table doesn't contribute to your model's feature pipeline",
-                        "remediation": "If this table is used by your propensity model features, ensure it contains sufficient historic data or consider using a different data source",
-                    }
-                )
-            else:
-                self.result["errors"].append(
-                    {
-                        "type": "INSUFFICIENT_HISTORIC_DATA",
-                        "feature": feature_name,
-                        "table": table_name,
-                        "message": f"Table has only {date_range_days} days of data (min: {min_date}, max: {max_date}). Minimum {min_required_days} days (i.e., > predict_window_days) is required for propensity modeling for it to generate past point-in-time feature data required for the model training. ETL tables that overwrite data cannot provide this historical context",
-                        "remediation": "Ensure the table contains sufficient historic data or consider using a different data source",
-                    }
-                )
-
-    def _set_final_status(self) -> None:
-        """Set the final validation status based on errors and warnings."""
-        if self.result["errors"]:
-            self.result["validation_status"] = "FAILED"
-        elif self.result["warnings"]:
-            self.result["validation_status"] = "WARNINGS"
-        else:
-            self.result["validation_status"] = "PASSED"
-
-    def _handle_validation_error(self, error: Exception) -> None:
-        """Handle unexpected validation errors."""
-        logger.error(f"Error during validation: {error}")
-        self.result["errors"].append(
-            {
-                "type": "VALIDATION_ERROR",
-                "message": f"Unexpected error during validation: {str(error)}",
-                "remediation": "Check project configuration files and try again",
-            }
-        )
-        self.result["validation_status"] = "FAILED"
-
-    def _validate_all_input_tables_fallback(self, input_tables_map: dict) -> None:
-        """
-        Fallback validation: Check all input tables for common issues.
-        Used when entity variables have complex dependencies that can't be traced.
-        Reports violations as warnings with explanatory context.
-        """
-        logger.info("Running fallback validation on all input tables")
-
-        for _, input_table_config in input_tables_map.items():
-            self._validate_occurred_at_col(
-                input_table_config, feature_name=None, is_fallback=True
-            )
-            self._validate_historic_data(
-                input_table_config, feature_name=None, is_fallback=True
-            )
-
-    def _has_complex_dependencies(self, entity_vars_map: dict) -> bool:
-        """
-        Check if an entity variable has complex dependencies that can't be easily traced.
-
-        Returns True for:
-        - No 'from' key (derived/calculated features)
-        - from: models/modelName (SQL model dependencies)
-        - Any other non-direct input reference
-        """
-        model_inputs = self.propensity_model.get("model_spec").get("inputs")
-
-        for input_feature in model_inputs:
-            feature_info = self._parse_feature_reference(input_feature)
-            if not feature_info:
-                continue
-
-            entity_var = entity_vars_map.get(feature_info["feature_name"])
-            if not entity_var:
-                continue
-
-            from_table = entity_var.get("from")
-
-            if not from_table:
-                logger.debug(f"Feature {input_feature} has no from table")
-                return True
-
-            table_ref = self._parse_table_reference(from_table)
-
-            if not table_ref or table_ref.get("source_type") != "inputs":
-                logger.debug(
-                    f"Feature {input_feature} has a non-inputs table reference"
-                )
-                return True
-
-        return False
-
-
-class ProfilesUtils:
-    def load_all_configs(self, project_path: str) -> dict:
-        """Load all required configuration files."""
-        project_config = self.load_project_config(project_path)
-        inputs_config = self.load_inputs_config(project_path, project_config)
-        models_config = self.load_models_config(project_path, project_config)
-
-        return {
-            "project": project_config,
-            "inputs": inputs_config,
-            "models": models_config,
-        }
-
-    def load_project_config(self, project_path: str) -> dict:
-        """Load pb_project.yaml configuration."""
-        pb_project_path = os.path.join(project_path, "pb_project.yaml")
-        if not os.path.exists(pb_project_path):
-            raise FileNotFoundError(f"pb_project.yaml not found at {pb_project_path}")
-
-        with open(pb_project_path, "r") as file:
-            return yaml.safe_load(file)
-
-    def load_inputs_config(self, project_path: str, project_config: dict) -> dict:
-        """Load inputs configuration from all YAML files in the models folder."""
-        model_folders = project_config.get("model_folders", ["models"])
-        models_folder = model_folders[0] if model_folders else "models"
-        models_dir = os.path.join(project_path, models_folder)
-
-        if not os.path.exists(models_dir):
-            raise FileNotFoundError(f"Models directory not found at {models_dir}")
-
-        combined_inputs = {"inputs": []}
-
-        for filename in os.listdir(models_dir):
-            if filename.endswith((".yaml", ".yml")):
-                file_path = os.path.join(models_dir, filename)
-                try:
-                    with open(file_path, "r") as file:
-                        config = yaml.safe_load(file)
-                        if config and "inputs" in config:
-                            combined_inputs["inputs"].extend(config["inputs"])
-                except Exception as e:
-                    logger.warning(f"Could not parse {filename}: {e}")
-
-        if not combined_inputs["inputs"]:
-            raise FileNotFoundError(
-                f"No inputs configuration found in any YAML files in {models_dir}"
-            )
-
-        return combined_inputs
-
-    def load_models_config(self, project_path: str, project_config: dict) -> dict:
-        """Load models configuration from all YAML files in the models folder."""
-        model_folders = project_config.get("model_folders", ["models"])
-        models_folder = model_folders[0] if model_folders else "models"
-        models_dir = os.path.join(project_path, models_folder)
-
-        if not os.path.exists(models_dir):
-            raise FileNotFoundError(f"Models directory not found at {models_dir}")
-
-        combined_config = {"models": [], "var_groups": []}
-
-        for filename in os.listdir(models_dir):
-            if filename.endswith((".yaml", ".yml")):
-                file_path = os.path.join(models_dir, filename)
-                try:
-                    with open(file_path, "r") as file:
-                        config = yaml.safe_load(file)
-                        if config:
-                            if "models" in config:
-                                combined_config["models"].extend(config["models"])
-                            if "var_groups" in config:
-                                combined_config["var_groups"].extend(
-                                    config["var_groups"]
-                                )
-                except Exception as e:
-                    logger.warning(f"Could not parse {filename}: {e}")
-
-        if not combined_config["models"] and not combined_config["var_groups"]:
-            raise FileNotFoundError(
-                f"No models or var_groups configuration found in any YAML files in {models_dir}"
-            )
-
-        return combined_config
-
-    def find_model(self, models_config: dict, model_name: str, model_type: str) -> dict:
-        """Find the specific propensity model in the configuration."""
-        models = models_config.get("models", [])
-        for model in models:
-            if (
-                model.get("name") == model_name
-                and model.get("model_type") == model_type
-            ):
-                return model
-        return None
