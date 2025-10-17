@@ -750,11 +750,3 @@ Example metrics output:
     }
 }
 ```
-
-### Important Implementation Details
-
-1. **Environment Preservation**: The `env_setup.py` script preserves all custom environment variables including Bedrock configuration
-2. **Container Support**: Automatically detects container environments and skips Cline-specific configuration
-3. **Error Handling**: Provides Cline-compatible error responses for seamless integration
-4. **Testing**: Includes `scripts/test_bedrock.py` for verification
-
