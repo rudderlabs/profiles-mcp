@@ -58,6 +58,41 @@ class TestPropensityValidator:
                 "var_groups": []
             }
         }
+
+    @pytest.fixture
+    def mock_faulty_yaml_configs(self):
+        """Mock YAML configuration files."""
+        return {
+            "pb_project": {
+                "name": "test_project",
+                "model_folders": ["models"]
+            },
+            "inputs": {
+                "inputs": [
+                    {
+                        "name": "events",
+                        "app_defaults": {
+                            "table": "test.events",
+                            "occurred_at_col": "timestamp"
+                        }
+                    }
+                ]
+            },
+            "profiles": {
+                "models": [
+                    {
+                        "name": "faulty_model",
+                        "model_type": "propensity",
+                        "model_spec": {
+                            "training": {
+                                "predict_window_days": 0
+                            }
+                        }
+                    }
+                ],
+                "var_groups": []
+            }
+        }
     
     @pytest.fixture
     def sample_propensity_model(self):
@@ -225,6 +260,62 @@ class TestPropensityValidator:
         assert result["validation_status"] == "FAILED"
         assert len(result["errors"]) == 1
         assert result["errors"][0]["type"] == "NO_MODELS_DATA"
+    
+    @patch('src.validators.propensity_validator.ProfilesUtils')
+    def test_validate_predict_window_days_not_positive(
+        self, 
+        mock_profiles_utils, 
+        mock_warehouse_client, 
+        mock_faulty_yaml_configs
+    ):
+        """Test validation fails when predict_window_days is not positive."""
+        # Mock YAML loading with faulty config (predict_window_days: 0)
+        mock_utils_instance = mock_profiles_utils.return_value
+        mock_utils_instance.load_all_configs.return_value = {
+            "project": mock_faulty_yaml_configs["pb_project"],
+            "inputs": mock_faulty_yaml_configs["inputs"],
+            "models": mock_faulty_yaml_configs["profiles"]
+        }
+        mock_utils_instance.find_model.return_value = mock_faulty_yaml_configs["profiles"]["models"][0]
+        
+        # Create a simple propensity model for pb_models_data
+        faulty_propensity_model = Model(
+            name="faulty_model",
+            display_name="faulty_model",
+            model_type="propensity",
+            path_ref="models/faulty_model",
+            materialization=Materialization(
+                output_type="table",
+                run_type="discrete",
+                sql_type="multi"
+            ),
+            warehouse_view_name="faulty_model",
+            is_feature=False,
+            entity="user"
+        )
+        
+        pb_data = PBModelsData(
+            entities=[],
+            models=[faulty_propensity_model]
+        )
+        
+        validator = PropensityValidator(
+            "/fake/path",
+            "faulty_model",
+            mock_warehouse_client,
+            pb_models_data=pb_data
+        )
+        
+        result = validator.validate()
+        
+        assert result["validation_status"] == "FAILED"
+        # Check for PREDICT_WINDOW_DAYS_NOT_POSITIVE error
+        pwd_errors = [
+            e for e in result["errors"] 
+            if e["type"] == "PREDICT_WINDOW_DAYS_NOT_POSITIVE"
+        ]
+        assert len(pwd_errors) > 0
+        assert "non-positive" in pwd_errors[0]["message"].lower()
     
     @patch('src.validators.propensity_validator.ProfilesUtils')
     def test_validate_no_propensity_models(self, mock_profiles_utils, mock_warehouse_client, mock_yaml_configs):

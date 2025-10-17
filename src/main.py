@@ -802,7 +802,7 @@ def validate_propensity_model_config(
 
 if __name__ == "__main__":
     try:
-        mcp.run()
+        mcp.run(transport="sse")
     except KeyboardInterrupt:
         print("Server stopped")
     except Exception as e:
