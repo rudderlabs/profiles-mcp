@@ -706,7 +706,7 @@ flowchart TD
 #### Environment Variables
 ```bash
 # Required for Bedrock
-BEDROCK_API_KEY="your_api_key_here"
+AWS_BEARER_TOKEN_BEDROCK="your_api_key_here"
 BEDROCK_AUTH_METHOD="api_key"  # Options: api_key, iam_role, sso, assume_role
 
 # Optional
@@ -724,7 +724,7 @@ The `setup.sh` script automatically:
 
 | Method | Configuration | Use Case |
 |--------|--------------|----------|
-| **API Key** | `BEDROCK_AUTH_METHOD="api_key"` + `BEDROCK_API_KEY` | Simplest, for individual developers |
+| **API Key** | `BEDROCK_AUTH_METHOD="api_key"` + `AWS_BEARER_TOKEN_BEDROCK` | Simplest, for individual developers |
 | **IAM Role** | `BEDROCK_AUTH_METHOD="iam_role"` | EC2/ECS instances with IAM roles |
 | **SSO** | `BEDROCK_AUTH_METHOD="sso"` + `AWS_SSO_PROFILE` | Corporate environments with SSO |
 | **Assume Role** | `BEDROCK_AUTH_METHOD="assume_role"` + `BEDROCK_ASSUME_ROLE_ARN` | Cross-account access |

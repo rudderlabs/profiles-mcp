@@ -133,7 +133,7 @@ if ! python3 scripts/update_mcp_config.py; then
 fi
 
 # Check if Bedrock configuration is present and configure if needed
-if [ -n "${BEDROCK_API_KEY}" ] || [ -n "${BEDROCK_AUTH_METHOD}" ]; then
+if [ -n "${AWS_BEARER_TOKEN_BEDROCK}" ] || [ -n "${BEDROCK_AUTH_METHOD}" ]; then
     print_status "Detected Bedrock configuration"
     
     # Create the wrapper script path

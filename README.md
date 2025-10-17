@@ -39,7 +39,7 @@ To use Amazon Bedrock instead of Anthropic, simply add these to your `.env` file
 
 ```bash
 # For API key authentication (simplest)
-BEDROCK_API_KEY="your_api_key_here"
+AWS_BEARER_TOKEN_BEDROCK="your_api_key_here"
 BEDROCK_AUTH_METHOD="api_key"  # Explicitly set to api_key
 
 # Optional: specify model and region
