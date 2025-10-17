@@ -64,11 +64,14 @@ class PropensityValidator:
 
             # Initialize configs from YAML files
             self._initialize_configs()
+
+            # Validate YAML config only if model was found
+            self._validate_propensity_model_spec(self.propensity_model)
             
             # Build input tables map for historic data validation
             input_tables_map = self._create_input_tables_map(self.configs["inputs"])
             
-            # Validate using pb_models_data
+            # Validate using pb_models_data (this is the primary validation)
             self._validate_using_pb_models_data(input_tables_map)
 
             self._set_final_status()
@@ -96,6 +99,47 @@ class PropensityValidator:
         self.propensity_model = utils.find_model(
             self.configs["models"], self.model_name, "propensity"
         )
+
+    def _validate_propensity_model_spec(self, prop_model) -> None:
+        """
+        Validate that the propensity model has a valid model_spec.
+        """
+        if not prop_model:
+            self.result["errors"].append(
+                {
+                    "type": "MODEL_NOT_FOUND",
+                    "message": f"Propensity model '{self.model_name}' not found in models configuration",
+                    "remediation": "Verify the model name exists in your profiles.yaml file",
+                }
+            )
+            self.result["validation_status"] = "FAILED"
+            return
+        
+        self._validate_propensity_model_predict_window_days()
+
+    def _validate_propensity_model_predict_window_days(self) -> None:
+        """
+        Validate that the propensity model has a predict_window_days defined.
+        """
+        pwd = self.propensity_model["model_spec"]["training"].get("predict_window_days")
+        if pwd is None:
+            self.result["errors"].append(
+                {
+                    "type": "PREDICT_WINDOW_DAYS_NOT_FOUND",
+                    "message": f"Propensity model '{self.model_name}' has no predict_window_days defined",
+                    "remediation": "Add a predict_window_days to the model_spec",
+                }
+            )
+            self.result["validation_status"] = "FAILED"
+        elif pwd <= 0:
+            self.result["errors"].append(
+                {
+                    "type": "PREDICT_WINDOW_DAYS_NOT_POSITIVE",
+                    "message": f"Propensity model '{self.model_name}' has a non-positive predict_window_days: {pwd}",
+                    "remediation": "Set predict_window_days to a positive integer",
+                }
+            )
+            self.result["validation_status"] = "FAILED"
 
     def _validate_using_pb_models_data(self, input_tables_map: dict) -> None:
         """
@@ -172,48 +216,41 @@ class PropensityValidator:
         
         # Get training and prediction models
         training_model = self.pb_models_data.get_model_by_name(f"{model_name}_training")
-        
-        # Build model set to validate
-        model_set = [prop_model]
-        if training_model:
-            model_set.append(training_model)
 
         # Track validated entity vars to avoid duplicate validation
         validated_entity_vars = set()
         
-        # Validate each model in the set
-        for model in model_set:
-            logger.info(f"Validating model: {model.name} ({model.model_type})")
-            
-            # Validation 1: Check direct inputs have is_feature=true
-            self._validate_direct_input_features(model, model_name)
-            
-            # Validation 2-4: Validate entity-var dependencies
-            if model.dependencies:
-                for dep_path in model.dependencies:
-                    dep_model = self._find_model_by_path(dep_path)
-                    if not dep_model:
-                        self.result["errors"].append({
-                            "type": "DEPENDENCY_NOT_FOUND",
-                            "message": f"Dependency '{dep_path}' not found in the project",
-                            "remediation": "Ensure the dependency specified in the propensity model exists in the project"
-                        })
+        logger.info(f"Validating model: {training_model.name} ({training_model.model_type})")
+        
+        # Validation 1: Check direct inputs have is_feature=true
+        self._validate_direct_input_features(training_model, model_name)
+        
+        # Validation 2-4: Validate entity-var dependencies
+        if training_model.dependencies:
+            for dep_path in training_model.dependencies:
+                dep_model = self._find_model_by_path(dep_path)
+                if not dep_model:
+                    self.result["errors"].append({
+                        "type": "DEPENDENCY_NOT_FOUND",
+                        "message": f"Dependency '{dep_path}' not found in the project",
+                        "remediation": "Ensure the dependency specified in the propensity model exists in the project"
+                    })
+                    continue
+                
+                # Only validate entity_var_item models
+                if dep_model.model_type == "entity_var_item":
+                    if dep_model.path_ref in validated_entity_vars:
                         continue
+                    validated_entity_vars.add(dep_model.path_ref)
                     
-                    # Only validate entity_var_item models
-                    if dep_model.model_type == "entity_var_item":
-                        if dep_model.path_ref in validated_entity_vars:
-                            continue
-                        validated_entity_vars.add(dep_model.path_ref)
-                        
-                        # Validation 2: Check for time-based functions
-                        self._validate_entity_var_time_functions(dep_model, model_name)
-                        
-                        # Validation 3: Check direct dependencies for is_event_stream
-                        self._validate_entity_var_direct_dependencies(dep_model, model_name)
-                        
-                        # Validation 4: Traverse to leaf nodes and validate historic data
-                        self._validate_entity_var_leaf_inputs(dep_model, model_name, input_tables_map)
+                    # Validation 2: Check for time-based functions
+                    self._validate_entity_var_time_functions(dep_model, model_name)
+                    
+                    # Validation 3: Check direct dependencies for is_event_stream
+                    self._validate_entity_var_direct_dependencies(dep_model, model_name)
+                    
+                    # Validation 4: Traverse to leaf nodes and validate historic data
+                    self._validate_entity_var_leaf_inputs(dep_model, model_name, input_tables_map)
     
     def _validate_entity_var_time_functions(self, entity_var_model, prop_model_name: str) -> None:
         """
@@ -268,6 +305,11 @@ class PropensityValidator:
         for dep_path in entity_var_model.dependencies:
             dep_model = self._find_model_by_path(dep_path)
             if not dep_model:
+                self.result["errors"].append({
+                    "type": "DEPENDENCY_NOT_FOUND",
+                    "message": f"Dependency '{dep_path}' not found in the project",
+                    "remediation": "Ensure the dependency specified in the propensity model exists in the project"
+                })
                 continue
             
             # Check if it's an input or sql_template

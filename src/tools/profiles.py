@@ -1374,8 +1374,8 @@ For more information, refer to the RudderStack Profiles documentation.
                 mode='w', suffix='.json', delete=False
             ).name
             
-            # cmd = f"pb mcp models -p {project_path} --migrate_on_load > {output_file}"
-            cmd = f"/Users/sp/rudderstack/codes/wht/wht mcp models -p {project_path} --migrate_on_load --rpc_python_path /Users/sp/rudderstack/codes/profiles-mcp-test/.venv/bin/python > {output_file}"
+            cmd = f"pb mcp models -p {project_path} --migrate_on_load > {output_file}"
+            # cmd = f"/Users/sp/rudderstack/codes/wht/wht show model_details -p {project_path} --migrate_on_load --rpc_python_path /Users/sp/rudderstack/codes/profiles-mcp-test/.venv/bin/python > {output_file}"
             result = subprocess.run(
                 cmd,
                 shell=True,
