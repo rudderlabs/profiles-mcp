@@ -33,6 +33,42 @@ This will:
 
 2. Restart Cursor to apply changes
 
+## Using Amazon Bedrock (Optional)
+
+The MCP server supports both Anthropic and Amazon Bedrock through a universal wrapper that automatically routes to the appropriate service based on your configuration.
+
+### For Bedrock:
+Add these to your `.env` file:
+
+```bash
+# For API key authentication (simplest)
+AWS_BEARER_TOKEN_BEDROCK="your_api_key_here"
+BEDROCK_AUTH_METHOD="api_key"  # Explicitly set to api_key
+
+# Optional: specify model and region
+BEDROCK_MODEL_ID="anthropic.claude-3-sonnet-20240229-v1:0"
+AWS_DEFAULT_REGION="us-east-1"
+```
+
+### For Anthropic:
+Add to your `.env` file:
+
+```bash
+ANTHROPIC_API_KEY="your_api_key_here"
+```
+
+Then run the setup:
+```bash
+./setup.sh
+```
+
+The universal wrapper will automatically detect which service to use at runtime. You can switch between Bedrock and Anthropic by simply changing your environment variables - no need to re-run setup.
+
+**Other authentication methods:**
+- **IAM Role**: Set `BEDROCK_AUTH_METHOD="iam_role"` (auto-detected on EC2/ECS)
+- **AWS SSO**: Set `BEDROCK_AUTH_METHOD="sso"` and `AWS_SSO_PROFILE="your-profile"`
+- **Assume Role**: Set `BEDROCK_AUTH_METHOD="assume_role"` and `BEDROCK_ASSUME_ROLE_ARN="arn:..."`
+
 ## Usage
 
 Once configured, you can use natural language to build a profiles project through chat interface in AI clients such as cursor:

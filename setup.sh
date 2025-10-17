@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$SCRIPT_DIR"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -126,6 +130,34 @@ print_status "Updating MCP configuration..."
 if ! python3 scripts/update_mcp_config.py; then
     print_error "Failed to update MCP configuration"
     exit 1
+fi
+
+# Configure universal wrapper for Cline (works with both Bedrock and Anthropic)
+print_status "Configuring universal API wrapper..."
+
+# Create the wrapper script path
+WRAPPER_SCRIPT="$PROJECT_ROOT/scripts/bedrock_anthropic_wrapper.sh"
+
+# Check if wrapper script exists
+if [ ! -f "$WRAPPER_SCRIPT" ]; then
+    print_error "Universal wrapper script not found at $WRAPPER_SCRIPT"
+    exit 1
+fi
+
+# Make wrapper executable
+chmod +x "$WRAPPER_SCRIPT"
+
+# Only configure Cline if not in container
+if [ ! -f /.dockerenv ] && [ "${IS_CLOUD_BASED}" != "true" ]; then
+    print_status "Setting up Cline integration with universal wrapper..."
+    # Update Cline configuration to use the universal wrapper
+    if ! python3 scripts/update_cline_for_bedrock.py; then
+        print_warning "Could not auto-configure Cline. You may need to configure manually."
+    else
+        print_status "Cline configured to use universal wrapper (supports both Bedrock and Anthropic)"
+    fi
+else
+    print_status "Container environment detected - Cline configuration skipped"
 fi
 
 # Ensure scripts/start.sh is executable
