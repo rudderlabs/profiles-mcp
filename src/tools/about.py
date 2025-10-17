@@ -1739,6 +1739,66 @@ pb audit id_stitcher
 - **Important**: Even "Program completed successfully" can hide warnings. So always check the logs. Also, this is a cumulative file, so if you run multiple times, the logs will be appended. Check for the last run.
 - **Action if issues found**: Check specific error messages and refer to troubleshooting guides
 
+## 🔄 **RECOVERING FROM FAILED RUNS: Using --seq_no**
+
+### 🚨 CRITICAL FOR AI AGENTS: ALWAYS Use --seq_no After Failures
+
+When `pb run` fails partway through, **ALWAYS continue from the last run using --seq_no**. This is a critical performance optimization that:
+- Reuses successfully completed models (pb detects changes via model hash)
+- Only re-executes failed models and models with configuration changes
+- Saves significant warehouse costs and execution time
+- Works intelligently even after you fix errors and change configurations
+
+### How to Extract seq_no from pb run Output
+
+**Method 1: Parse pb run terminal output** (Most Reliable)
+The pb run output contains a line like:
+```
+To use this seq, run `pb run --seq_no 5`
+```
+**AI Agents: Extract the number from this line automatically from terminal output.**
+
+**Method 2: Check output directory**
+```bash
+ls -ltr output/<env>/
+```
+The most recently created directory number is your seq_no.
+
+**Method 3: Check logs/pb.log**
+Search for "seq_no" or "Seq" in the most recent run section.
+
+### How to Continue After Fixing Errors
+```bash
+pb run --seq_no <extracted_seq_no>
+```
+
+### Why This Always Works
+pb uses model hashing - it automatically:
+- Detects which models have changed (different hash)
+- Reuses unchanged models from previous seq_no
+- Re-runs only changed models and their downstream dependencies
+- Maintains consistency across all runs
+
+### Example Recovery Workflow
+```bash
+pb run --begin_time '2025-01-01T00:00:00Z'
+ERROR: Propensity model 'churn_model' configuration error
+
+ls -ltr output/dev/
+drwxr-xr-x  5 user  staff  160 Jan 15 10:23 7
+
+Fix the error in profiles.yaml
+
+pb run --seq_no 7
+```
+
+### AI Agent Best Practices
+1. **ALWAYS capture seq_no** from every pb run output (parse terminal output)
+2. **On any failure, ALWAYS suggest retry with --seq_no** after fixes
+3. **Never suggest plain 'pb run'** after a failed run - always use --seq_no
+4. **Inform user** about time/cost savings (can be 10x faster for large projects)
+5. **Extract seq_no automatically** - don't ask user to find it manually
+
 ## ✅ **SUCCESS CRITERIA CHECKLIST**
 
 After a successful run, verify:
