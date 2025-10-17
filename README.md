@@ -35,7 +35,10 @@ This will:
 
 ## Using Amazon Bedrock (Optional)
 
-To use Amazon Bedrock instead of Anthropic, simply add these to your `.env` file:
+The MCP server supports both Anthropic and Amazon Bedrock through a universal wrapper that automatically routes to the appropriate service based on your configuration.
+
+### For Bedrock:
+Add these to your `.env` file:
 
 ```bash
 # For API key authentication (simplest)
@@ -47,12 +50,19 @@ BEDROCK_MODEL_ID="anthropic.claude-3-sonnet-20240229-v1:0"
 AWS_DEFAULT_REGION="us-east-1"
 ```
 
-Then run the normal setup:
+### For Anthropic:
+Add to your `.env` file:
+
+```bash
+ANTHROPIC_API_KEY="your_api_key_here"
+```
+
+Then run the setup:
 ```bash
 ./setup.sh
 ```
 
-The setup script will automatically detect Bedrock configuration and set up Cline to use it.
+The universal wrapper will automatically detect which service to use at runtime. You can switch between Bedrock and Anthropic by simply changing your environment variables - no need to re-run setup.
 
 **Other authentication methods:**
 - **IAM Role**: Set `BEDROCK_AUTH_METHOD="iam_role"` (auto-detected on EC2/ECS)

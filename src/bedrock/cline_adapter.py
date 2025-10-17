@@ -111,7 +111,7 @@ class ClineBedrockAdapter:
         
         # Initialize client based on auth method
         if self.auth_method == 'api_key':
-            api_key = os.getenv('AWS_BEARER_TOKEN_BEDROCK') or os.getenv('AWS_BEARER_TOKEN_BEDROCK')
+            api_key = os.getenv('AWS_BEARER_TOKEN_BEDROCK')
             if not api_key:
                 raise ValueError("AWS_BEARER_TOKEN_BEDROCK environment variable is required")
             self.client = BedrockAPIKeyClient(api_key, self.region)
