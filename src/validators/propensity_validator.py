@@ -70,6 +70,7 @@ class PropensityValidator:
             
             # Build input tables map for historic data validation
             input_tables_map = self._create_input_tables_map(self.configs["inputs"])
+            print(f"---input_tables_map: {input_tables_map}")
             
             # Validate using pb_models_data (this is the primary validation)
             self._validate_using_pb_models_data(input_tables_map)
@@ -147,30 +148,17 @@ class PropensityValidator:
         and YAML configs for input table validation.
         """
         # Find all propensity models
-        propensity_models = self.pb_models_data.get_models_by_type("propensity")
+        prop_model = self.pb_models_data.get_model_by_name(self.model_name)
         
-        if not propensity_models:
+        if not prop_model:
             self.result["errors"].append({
-                "type": "NO_PROPENSITY_MODELS",
-                "message": "No propensity models found in project to validate",
-                "remediation": "Add a propensity model to your profiles.yaml"
+                "type": "PROPENSITY_MODEL_NOT_FOUND",
+                "message": f"Propensity model '{self.model_name}' not found",
+                "remediation": "Verify the model name exists in your profiles.yaml"
             })
             return
         
-        # Filter to specific model if model_name provided
-        if self.model_name:
-            propensity_models = [m for m in propensity_models if m.name == self.model_name]
-            if not propensity_models:
-                self.result["errors"].append({
-                    "type": "MODEL_NOT_FOUND",
-                    "message": f"Propensity model '{self.model_name}' not found",
-                    "remediation": "Verify the model name exists in your profiles.yaml"
-                })
-                return
-        
-        # Validate each propensity model set
-        for prop_model in propensity_models:
-            self._validate_propensity_model_set_combined(prop_model, input_tables_map)
+        self._validate_propensity_model(prop_model, input_tables_map)
 
     def _create_input_tables_map(self, inputs_config: dict) -> dict:
         """Create a map of input table names to their configurations."""
@@ -201,7 +189,7 @@ class PropensityValidator:
             return {"source_type": parts[0], "table_name": parts[1]}
         return None
 
-    def _validate_propensity_model_set_combined(self, prop_model, input_tables_map: dict) -> None:
+    def _validate_propensity_model(self, prop_model, input_tables_map: dict) -> None:
         """
         Validate a propensity model set using combined approach.
         
@@ -214,17 +202,18 @@ class PropensityValidator:
         model_name = prop_model.name
         logger.info(f"Validating propensity model set: {model_name}")
         
-        # Get training and prediction models
+        # Get training model 
         training_model = self.pb_models_data.get_model_by_name(f"{model_name}_training")
 
         # Track validated entity vars to avoid duplicate validation
         validated_entity_vars = set()
+        leaf_model_event_stream_error_set = set()
         
         logger.info(f"Validating model: {training_model.name} ({training_model.model_type})")
         
         # Validation 1: Check direct inputs have is_feature=true
         self._validate_direct_input_features(training_model, model_name)
-        
+
         # Validation 2-4: Validate entity-var dependencies
         if training_model.dependencies:
             for dep_path in training_model.dependencies:
@@ -244,15 +233,15 @@ class PropensityValidator:
                     validated_entity_vars.add(dep_model.path_ref)
                     
                     # Validation 2: Check for time-based functions
-                    self._validate_entity_var_time_functions(dep_model, model_name)
+                    self._validate_entity_var_time_functions(dep_model)
                     
                     # Validation 3: Check direct dependencies for is_event_stream
-                    self._validate_entity_var_direct_dependencies(dep_model, model_name)
+                    self._validate_entity_var_direct_dependencies(dep_model)
                     
-                    # Validation 4: Traverse to leaf nodes and validate historic data
-                    self._validate_entity_var_leaf_inputs(dep_model, model_name, input_tables_map)
+                # Validation 4: Traverse to leaf nodes and validate historic data
+                self._validate_entity_var_leaf_inputs(dep_model, input_tables_map, leaf_model_event_stream_error_set)
     
-    def _validate_entity_var_time_functions(self, entity_var_model, prop_model_name: str) -> None:
+    def _validate_entity_var_time_functions(self, entity_var_model) -> None:
         """
         Validate that entity_var doesn't use time-based functions.
         
@@ -266,7 +255,7 @@ class PropensityValidator:
             return
 
         yaml_content = entity_var_model.feature_data.yaml
-        
+
         # Regex patterns for time-based functions (case-insensitive)
         current_date_pattern = re.compile(r'\bcurrent_date\s*\(', re.IGNORECASE)
         datediff_pattern = re.compile(r'\bdatediff\s*\(', re.IGNORECASE)
@@ -277,7 +266,7 @@ class PropensityValidator:
                 "type": "TIME_FUNCTION_IN_FEATURE",
                 "feature": entity_var_model.name,
                 "message": f"Feature '{entity_var_model.name}' uses current_date() which is not allowed in propensity models",
-                "remediation": "Remove current_date() and use point-in-time feature calculations instead"
+                "remediation": "Remove current_date() and use macro macro_datediff or macro_datediff_n instead"
             })
         
         # Check for datediff()
@@ -286,10 +275,16 @@ class PropensityValidator:
                 "type": "TIME_FUNCTION_IN_FEATURE",
                 "feature": entity_var_model.name,
                 "message": f"Feature '{entity_var_model.name}' uses datediff() which is not allowed in propensity models",
-                "remediation": "Remove datediff() and use point-in-time feature calculations instead"
+                "remediation": "Remove datediff() and use macro macro_datediff or macro_datediff_n instead"
             })
+
+        # check dependencies for indirect var dependencies also.
+        for dep_path in entity_var_model.dependencies:
+            dep_model = self._find_model_by_path(dep_path)
+            if dep_model.model_type in ["entity_var_item", "input_var_item"]:
+                self._validate_entity_var_time_functions(dep_model)
     
-    def _validate_entity_var_direct_dependencies(self, entity_var_model, prop_model_name: str) -> None:
+    def _validate_entity_var_direct_dependencies(self, entity_var_model) -> None:
         """
         Validate that direct dependencies of entity_var have is_event_stream=true.
         
@@ -322,8 +317,12 @@ class PropensityValidator:
                         "message": f"Input table '{dep_model.name}' used by feature '{entity_var_model.name}' must have is_event_stream: true for propensity modeling",
                         "remediation": f"Add occurred_at_col in app_defaults of the input table or model_spec of sql_template type model '{dep_model.name}'"
                     })
+                continue
+            
+            if dep_model.model_type == "entity_var_item":
+                self._validate_entity_var_direct_dependencies(dep_model)
     
-    def _validate_entity_var_leaf_inputs(self, entity_var_model, prop_model_name: str, input_tables_map: dict) -> None:
+    def _validate_entity_var_leaf_inputs(self, entity_var_model, input_tables_map: dict, leaf_model_event_stream_error_set: set) -> None:
         """
         Traverse dependency tree to leaf nodes and validate historic data.
         
@@ -335,19 +334,19 @@ class PropensityValidator:
             input_tables_map: Map of input table names to their YAML configurations
         """
         visited = set()
-        leaf_input_nodes = []
+        leaf_input_nodes = {}
         
         def traverse(current_model):
             if current_model.path_ref in visited:
                 return
             visited.add(current_model.path_ref)
-            
+
             # If no dependencies, it's a leaf node
             if not current_model.dependencies:
                 if current_model.model_type == "input":
-                    leaf_input_nodes.append(current_model)
+                    leaf_input_nodes[f"inputs/{current_model.name}"] = current_model
                 return
-            
+
             # Traverse dependencies
             has_valid_dependency = False
             for dep_path in current_model.dependencies:
@@ -358,19 +357,34 @@ class PropensityValidator:
             
             # If all dependencies are invalid and it's an input, it's a leaf node
             if not has_valid_dependency and current_model.model_type == "input":
-                leaf_input_nodes.append(current_model)
+                leaf_input_nodes[f"inputs/{current_model.name}"] = current_model
         
         # Start traversal from the entity_var
         traverse(entity_var_model)
-        
+
         # Validate historic data for each leaf input
-        for leaf in leaf_input_nodes:
-            input_table_config = input_tables_map.get(leaf.name)
+        for leaf_path, leaf_model in leaf_input_nodes.items():
+            if leaf_path in leaf_model_event_stream_error_set:
+                continue
+            leaf_model_event_stream_error_set.add(leaf_path)
+            input_table_config = input_tables_map.get(leaf_model.name)
             if input_table_config:
                 # Get predict_window_days from propensity model
-                prop_model_obj = self._find_model_by_path(f"models/{prop_model_name}")
+                prop_model_obj = self._find_model_by_path(leaf_path)
                 if not prop_model_obj:
+                    self.result["errors"].append({
+                        "type": "DEPENDENCY_NOT_FOUND",
+                        "message": f"Dependency {leaf_path} not found in the project",
+                        "remediation": "Ensure the dependency specified in the propensity model exists in the project"
+                    })
                     continue
+                if not prop_model_obj.is_event_stream:
+                    self.result["errors"].append({
+                        "type": "NON_EVENT_STREAM_INPUT",
+                        "feature": entity_var_model.name,
+                        "message": f"Input table {leaf_path} used by feature '{entity_var_model.name}' must have is_event_stream: true",
+                        "remediation": f"Add occurred_at_col in app_defaults of the input table or model_spec of sql_template trype model '{prop_model_obj.name}'"
+                    })
                 
                 # Call _validate_historic_data with is_fallback=False
                 self._validate_historic_data(

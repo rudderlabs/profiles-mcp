@@ -1385,13 +1385,13 @@ For more information, refer to the RudderStack Profiles documentation.
             )
             
             if result.returncode != 0:
-                logger.error(f"pb mcp models command failed: {result.stderr}")
+                logger.error(f"pb show model_details command failed: {result.stderr}")
                 return {
                     "model_name": model_name,
                     "validation_status": "FAILED",
                     "errors": [{
                         "type": "PB_COMMAND_FAILED",
-                        "message": f"Failed to run pb mcp models command: {result.stderr}",
+                        "message": f"Failed to run pb show model_details command: {result.stderr}",
                         "remediation": "Ensure pb CLI is installed and project path is correct"
                     }],
                     "warnings": [],
@@ -1406,7 +1406,7 @@ For more information, refer to the RudderStack Profiles documentation.
             os.unlink(output_file)
             
         except Exception as e:
-            logger.error(f"Error running pb mcp models: {e}")
+            logger.error(f"Error running pb show model_details: {e}")
             return {
                 "model_name": model_name,
                 "validation_status": "FAILED",
