@@ -341,7 +341,7 @@ class TestPropensityValidator:
         result = validator.validate()
         
         assert result["validation_status"] == "FAILED"
-        assert any(e["type"] == "NO_PROPENSITY_MODELS" for e in result["errors"])
+        assert any(e["type"] == "MODEL_NOT_FOUND" for e in result["errors"])
     
     @patch('src.validators.propensity_validator.ProfilesUtils')
     def test_validate_model_not_found(
@@ -540,7 +540,7 @@ class TestPropensityValidator:
             if e["type"] == "NON_EVENT_STREAM_INPUT"
         ]
         assert len(event_stream_errors) > 0
-        assert "is_event_stream" in event_stream_errors[0]["message"]
+        assert "occurred_at_col" in event_stream_errors[0]["remediation"]
     
     @patch('src.validators.propensity_validator.ProfilesUtils')
     def test_validate_detects_non_feature_input(
