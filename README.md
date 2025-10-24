@@ -1,76 +1,157 @@
 # Profiles MCP Server
 
-This component provides a Model Context Protocol (MCP) server for building profiles projects through AI applications like Claude in Cursor IDE.
+## What is This?
+
+The Profiles MCP Server enables you to build RudderStack Profiles projects using natural language through AI assistants. Simply describe what you want to accomplish, and the AI will guide you through data discovery, identity resolution, feature engineering, and propensity modeling - all through conversational interactions.
 
 ## Prerequisites
 
-
-- Requires Python 3.10.x to be installed
-- Access to a supported data warehouse with appropriate permissions:
+- **Python 3.10.x** installed on your system
+- **Data Warehouse Access** with appropriate permissions:
   - **Snowflake**: Read access to input tables and write access to output schema
   - **BigQuery**: Read access to input datasets and write access to output dataset
-- **Snowflake Authentication**: MFA (Multi-Factor Authentication) is not supported. If your Snowflake account has MFA enabled, you must use [key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth) instead.
-- **BigQuery Authentication**: Supports Service Account JSON files and Application Default Credentials
-- Cursor IDE v0.47.x or higher installed for building profiles projects. A free version works in theory but the experience is significantly better with a paid version
-- A Rudderstack [Personal Access Token](https://www.rudderstack.com/docs/dashboard-guides/personal-access-token/#generate-personal-access-token)
+- **RudderStack Personal Access Token**: Generate one from your [RudderStack dashboard](https://www.rudderstack.com/docs/dashboard-guides/personal-access-token/#generate-personal-access-token)
+- **AI Client with MCP Support**: See [AI Client Support](#ai-client-support) section below
+
+### Authentication Requirements
+
+- **Snowflake**: MFA (Multi-Factor Authentication) is not supported. If your account has MFA enabled, use [key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth) instead
+- **BigQuery**: Supports Service Account JSON files and Application Default Credentials
+
+## AI Client Support
+
+The Profiles MCP server works with any AI client that supports the Model Context Protocol (MCP).
+
+### Automatic Integration
+
+Our setup script (`setup.sh`) provides automatic integration for:
+- **Cursor IDE**
+- **Claude Code** (claude.ai/code)
+- **Cline** (VSCode extension)
+
+If the automatic integration doesn't work or you encounter issues, you can manually configure the integration (see below).
+
+### Manual Integration
+
+For other AI clients or if automatic integration fails:
+
+1. Configure your AI client's MCP settings to use this command:
+   ```
+   /path/to/profiles-mcp/scripts/start.sh
+   ```
+
+2. Refer to your specific AI client's documentation for MCP server configuration. Make sure you update the client to its latest version.
+
+3. Restart your AI client after configuration
+
+**Recommended Model**: For the best experience, we recommend using a **high-capability model** such as Claude Sonnet 4.5, GPT-5 etc. While the server works with most LLMs, advanced reasoning models provide optimal performance for complex profiles project workflows
 
 ## Quick Start
 
-1. Set up the mcp server:
+1. Clone this repository and navigate to the directory:
+   ```bash
+   cd profiles-mcp
+   ```
 
-```bash
-# Run the setup script to install dependencies, validate your environment, and download embeddings:
-./setup.sh
-```
+2. Run the setup script:
+   ```bash
+   ./setup.sh
+   ```
 
-This will:
-- Check for Python and `uv`
-- Install `uv` if it is not found
-- Create `.env` if missing
-- Install dependencies
-- Download and extract embeddings to `src/data/`
-- Update MCP configuration
+   This will:
+   - Check for Python 3.10.x and `uv` package manager
+   - Install `uv` if not found
+   - Create `.env` file if missing
+   - Install all dependencies
+   - Download and extract embeddings to `src/data/`
+   - Automatically configure MCP integration for supported AI clients (Cursor, Claude Code, Cline)
 
-2. Restart Cursor to apply changes
+3. Restart your AI client to apply the configuration changes
 
 ## Usage
 
-Once configured, you can use natural language to build a profiles project through chat interface in AI clients such as cursor:
+Once configured, you can interact with the AI using natural language to build profiles projects. The AI will guide you through the entire process. If you have multiple MCP servers running, or you are working in a blank project, the AI may need to be prompted to use Rudderstack Profiles, so it knows to call the Profiles MCP server.
 
-```txt
--- Example queries
-- build a rudderstack profiles project to calculate the churn propensity score for the data in snowflake under db RUDDERSTACK_TEST_DB and schema predictions_dev_project
-- build a rudderstack profiles project to find revenue metrics for each user in BigQuery under project my-project and dataset predictions_dev
-- build a rudderstack profiles project to create customer segments using data from my warehouse
+### Example Conversations
+
+**Predictive Analytics:**
+```
+"Build a churn prediction model for my subscription users in Snowflake using Rudderstack Profiles"
+"Add a customer lifetime value prediction model to my profiles project"
 ```
 
-While the chat experience will work with most LLMs, we recommend using claude 4.0 class of models (ex: sonnet-4)
+**Feature Engineering:**
+```
+"Build a customer profiles project with purchase behavior features"
+"Generate features for my marketing campaigns using Rudderstack Profiles"
+```
 
-## Debug:
+**Identity Resolution:**
+```
+"Stitch together user identities across email, phone, and user_id, using Rudderstack Profiles"
+"Create unified customer profiles from multiple data sources"
+```
 
-In Cursor MCP settings, you should see the profiles mcp tool active, with a green button indicating the MCP tools are available. See the below image for reference:
+The AI will:
+1. Discover relevant tables in your warehouse
+2. Guide you through configuration decisions
+3. Generate the necessary YAML files
+4. Validate your setup
+5. Help you run and troubleshoot the project
+
+## Troubleshooting
+
+### Verifying MCP Server Status
+
+**For Cursor Users:**
+In Cursor MCP settings, you should see the profiles mcp tool active with a green indicator. See the reference image:
 ![Cursor Settings](mcp_settings_cursor_reference.png)
 
-If you don't see the tools, or the profiles mcp server shows as inactive, run this command on terminal within the `profiles-mcp` directory. This should launch the mcp server directly, and if there are any errors in running the script, this should catch these.
-```
-> scripts/start.sh
-```
-Then check the log file, `profiles-mcp.log` within the `profiles-mcp` directory.
+**For All AI Clients:**
+If the MCP tools are not available or the server appears inactive:
+
+1. Test the server directly by running in your terminal:
+   ```bash
+   cd profiles-mcp
+   ./scripts/start.sh
+   ```
+
+2. Check for errors in the output or review the log file:
+   ```bash
+   cat profiles-mcp.log
+   ```
+
+3. Common issues:
+   - **Python version**: Ensure Python 3.10.x is installed and in your PATH
+   - **Missing dependencies**: Re-run `./setup.sh`
+   - **Environment variables**: Verify `.env` file exists with your RudderStack PAT
+   - **Permissions**: Ensure `scripts/start.sh` is executable (`chmod +x scripts/start.sh`)
+
+4. If issues persist, manually verify the MCP configuration in your AI client points to the correct path for `scripts/start.sh`
 
 
-## Available Tools:
+## How It Works
 
-The MCP Server provides following categories of tools:
+The MCP Server provides a comprehensive toolkit that enables AI assistants to build profiles projects:
 
-* Resources tool - `about_profiles`. It provides the AI agent with static text, which has the required info about the pb concepts, models, syntax etc.
-* RAG tools. Example `search_profiles_docs`. For more open-ended questions that can be answered from our docs, these tools provide a way for the agent to ask specific questions and get answers. These tools are useful for debugging when the agent faces any errors
-* Query tools. Example are `run_query`, `input_table_suggestions` etc. These use warehouse connectors (Snowflake & BigQuery) and can be used to run queries directly on the warehouse
-* Profiles utility tools. Example are `get_profiles_output_details`, `get_existing_connections` etc, which look at the yaml files, output files, siteconfig etc and provide required context to the AI agent
+### Tool Categories
 
-## Key components:
-1. **Multi-warehouse support**: Factory-pattern warehouse connectors for Snowflake and BigQuery that connect using credentials provided during setup. The connection should be to the same warehouse where the profiles project will be built, but doesn't need to be in the same database/schema as the input or output data.
-2. **Unified warehouse interface**: All warehouse operations use the same API regardless of the underlying warehouse type
-3. **In-memory Qdrant vector database**: Enables the RAG workflow for documentation search
+1. **Knowledge Tools** - Provide the AI with RudderStack Profiles concepts, syntax, and best practices
+   - `about_profiles`: Static documentation on core concepts
+   - `search_profiles_docs`: RAG-powered search for answering specific questions
+
+2. **Data Discovery Tools** - Explore and analyze your warehouse data
+   - `run_query`: Execute SQL queries on your warehouse
+   - `describe_table`: Examine table schemas and structure
+   - `input_table_suggestions`: Identify relevant tables for your project
+
+3. **Project Management Tools** - Set up and configure profiles projects
+   - `get_existing_connections`: List available warehouse connections
+   - `setup_new_profiles_project`: Initialize Python environment and project structure
+   - `validate_propensity_model_config`: Validate predictive model configurations
+
+4. **Output Analysis Tools** - Work with profiles project results
+   - `get_profiles_output_details`: Analyze generated feature tables and model outputs
 
 ## Supported Data Warehouses
 
@@ -79,37 +160,40 @@ The MCP Server provides following categories of tools:
 | **Snowflake** | ✅ Fully Supported | Username/Password, Key Pair, SSO | MFA not supported, use key-pair auth instead |
 | **BigQuery** | ✅ Fully Supported | Service Account JSON, Application Default Credentials | Project-based permissions required |
 
-## Coming soon:
-1. Integration to Claude desktop automatically
-2. More analysis tools on the profiles output tables
-3. Additional warehouse support (Redshift, Databricks)
+## Roadmap
 
-## For Developers
+We're continuously improving the Profiles MCP Server. Upcoming features include:
+- Enhanced analysis tools for profiles output tables
+- Additional warehouse support (Redshift, Databricks)
+- Advanced debugging and validation capabilities
 
-### Backend API Reference
-For developers working with RAG-related tools, refer to the backend API service at:
-https://github.com/rudderlabs/profiles-mcp-service
+## Advanced Configuration
 
-This repository contains the backend implementation that powers the RAG functionality used by tools like `search_profiles_docs`.
+### Manual MCP Configuration
 
-## Integrations (optional)
+If you need to manually configure your AI client's MCP settings, use the following configuration template:
 
-### Cursor Integration
-
-1. Update your Cursor MCP configuration in `~/.cursor/mcp.json`:
-
+**For Cursor** (`~/.cursor/mcp.json`):
 ```json
 {
   "mcpServers": {
     "profiles": {
-      "command": "/path/to/scripts/start.sh",
+      "command": "/absolute/path/to/profiles-mcp/scripts/start.sh",
       "args": []
     }
   }
 }
 ```
 
-2. Restart Cursor to apply changes
+**For Claude Code**: Configuration is handled automatically by `setup.sh`
+
+**For Cline**: Configuration is handled automatically by `setup.sh`
+
+**For other MCP-compatible clients**: Refer to your client's documentation and point to `scripts/start.sh` as the server command
+
+### For Developers
+
+**Contributing**: Contributions are welcome! Please ensure Python 3.10.x compatibility and follow the existing code patterns
 
 
 ## License
