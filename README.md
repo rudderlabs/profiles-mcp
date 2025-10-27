@@ -24,10 +24,12 @@ The Profiles MCP server works with any AI client that supports the Model Context
 
 ### Automatic Integration
 
-Our setup script (`setup.sh`) provides automatic integration for:
-- **Cursor IDE**
-- **Claude Code** (claude.ai/code)
-- **Cline** (VSCode extension)
+Running the setup script (`./setup.sh`) will automatically:
+1. Create the MCP server startup script (`scripts/start.sh`)
+2. Configure MCP integration for supported AI clients:
+   - **Cursor IDE**
+   - **Claude Code** (claude.ai/code)
+   - **Cline** (VSCode extension)
 
 If the automatic integration doesn't work or you encounter issues, you can manually configure the integration (see below).
 
@@ -35,16 +37,19 @@ If the automatic integration doesn't work or you encounter issues, you can manua
 
 For other AI clients or if automatic integration fails:
 
-1. Configure your AI client's MCP settings to use this command:
+1. **First, run setup**: Ensure you've run `./setup.sh` to create the `scripts/start.sh` file and install dependencies
+
+2. **Configure your AI client's MCP settings** to point to:
    ```
-   /path/to/profiles-mcp/scripts/start.sh
+   /absolute/path/to/profiles-mcp/scripts/start.sh
    ```
+   Replace `/absolute/path/to/profiles-mcp/` with the actual full path to your cloned repository
 
-2. Refer to your specific AI client's documentation for MCP server configuration. Make sure you update the client to its latest version.
+3. Refer to your specific AI client's documentation for MCP server configuration. Make sure you update the client to its latest version
 
-3. Restart your AI client after configuration
+4. Restart your AI client after configuration
 
-**Recommended Model**: For the best experience, we recommend using a **high-capability model** such as Claude Sonnet 4.5, GPT-5 etc. While the server works with most LLMs, advanced reasoning models provide optimal performance for complex profiles project workflows
+**Recommended Model**: For the best experience, we recommend using **high-capability models** such as the latest Claude Sonnet, GPT-5 class, or similar advanced reasoning models. While the server works with most LLMs, advanced reasoning models provide optimal performance for complex profiles project workflows
 
 ## Quick Start
 
@@ -72,7 +77,7 @@ For other AI clients or if automatic integration fails:
 
 Once configured, you can interact with the AI using natural language to build profiles projects. The AI will guide you through the entire process. If you have multiple MCP servers running, or you are working in a blank project, the AI may need to be prompted to use Rudderstack Profiles, so it knows to call the Profiles MCP server.
 
-### Example Conversations
+### Example prompts to start a conversation
 
 **Predictive Analytics:**
 ```
