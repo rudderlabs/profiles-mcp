@@ -1,7 +1,7 @@
 """
 Unit tests for PB Models Parser.
 
-Tests the parsing and unmarshaling of JSON output from `pb mcp models` command.
+Tests the parsing and unmarshaling of JSON output from `pb show model_details` command.
 """
 
 import json

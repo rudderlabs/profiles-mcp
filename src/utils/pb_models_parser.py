@@ -1,8 +1,8 @@
 """
-Parser for pb mcp models JSON output.
+Parser for pb show model_details JSON output.
 
 This module provides data models and parsing functionality for the JSON output
-from the `pb mcp models -p project_path` command. The parsed models can be used
+from the `pb show model_details -p project_path` command. The parsed models can be used
 by any MCP tool that needs access to entity and model metadata.
 
 Usage:
@@ -100,7 +100,7 @@ class Entity:
 
 @dataclass
 class Model:
-    """Represents a model definition from pb mcp models output."""
+    """Represents a model definition from pb show model_details output."""
     name: str
     display_name: str
     model_type: str
@@ -147,10 +147,10 @@ class Model:
 @dataclass
 class PBModelsData:
     """
-    Container for all entities and models from pb mcp models output.
+    Container for all entities and models from pb show model_details output.
     
     This class provides a structured representation of the JSON output from
-    `pb mcp models` command and offers convenient query methods.
+    `pb show model_details` command and offers convenient query methods.
     """
     entities: List[Entity] = field(default_factory=list)
     models: List[Model] = field(default_factory=list)
@@ -214,7 +214,7 @@ class PBModelsData:
 
 class PBModelsParser:
     """
-    Parser for pb mcp models JSON output.
+    Parser for pb show model_details JSON output.
     
     This class provides static methods to parse JSON from files or strings
     and return structured PBModelsData objects.
@@ -226,7 +226,7 @@ class PBModelsParser:
         Parse PB models data from a JSON file.
         
         Args:
-            file_path: Path to the JSON file (output from pb mcp models command)
+            file_path: Path to the JSON file (output from pb show model_details command)
             
         Returns:
             PBModelsData object containing parsed entities and models
@@ -250,7 +250,7 @@ class PBModelsParser:
         Parse PB models data from a JSON string.
         
         Args:
-            json_string: JSON string (output from pb mcp models command)
+            json_string: JSON string (output from pb show model_details command)
             
         Returns:
             PBModelsData object containing parsed entities and models
@@ -267,7 +267,7 @@ class PBModelsParser:
         Parse PB models data from a dictionary.
         
         Args:
-            data: Dictionary representation of pb mcp models output
+            data: Dictionary representation of pb show model_details output
             
         Returns:
             PBModelsData object containing parsed entities and models

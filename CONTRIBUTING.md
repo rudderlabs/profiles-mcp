@@ -10,6 +10,7 @@ Use these values in the UI to start + connect to the mcp server
 Transport Type:STDIO
 Command: uv
 Arguments: `run --with mcp[cli] mcp run src/main.py`
+
 ```
 
 ### Backend API Reference
@@ -20,5 +21,3 @@ https://github.com/rudderlabs/profiles-mcp-service
 ### Run tests
 
 Run `uv run pytest -v` 
-
-
