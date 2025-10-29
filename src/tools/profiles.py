@@ -1368,14 +1368,14 @@ For more information, refer to the RudderStack Profiles documentation.
             dict: Structured validation results with errors, warnings, and suggestions
         """
 
-        # Run pb mcp models command to get the models JSON
+        # Run pb show model_details command to get the models JSON
+        output_file = None
         try:
             output_file = tempfile.NamedTemporaryFile(
                 mode='w', suffix='.json', delete=False
             ).name
             
-            cmd = f"pb mcp models -p {project_path} --migrate_on_load > {output_file}"
-            # cmd = f"/Users/sp/rudderstack/codes/wht/wht show model_details -p {project_path} --migrate_on_load --rpc_python_path /Users/sp/rudderstack/codes/profiles-mcp-test/.venv/bin/python > {output_file}"
+            cmd = f"pb show model_details -p {project_path} --migrate_on_load > {output_file}"
             result = subprocess.run(
                 cmd,
                 shell=True,
@@ -1402,9 +1402,6 @@ For more information, refer to the RudderStack Profiles documentation.
             # Parse the JSON output
             pb_models_data = PBModelsParser.from_json_file(output_file)
             
-            # Clean up temp file
-            os.unlink(output_file)
-            
         except Exception as e:
             logger.error(f"Error running pb show model_details: {e}")
             return {
@@ -1419,10 +1416,15 @@ For more information, refer to the RudderStack Profiles documentation.
                 "suggestions": [],
                 "table_stats": {}
             }
+        finally:
+            # Clean up temp file
+            if output_file is not None:
+                os.unlink(output_file)
         
         validator = PropensityValidator(
             project_path, model_name, warehouse_client, pb_models_data
         )
+
         return validator.validate()
 
     def fetch_warehouse_credentials(self, connection_name: str) -> dict:

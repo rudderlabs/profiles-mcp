@@ -1,5 +1,4 @@
 import os
-import os
 import yaml
 from logger import setup_logger
 

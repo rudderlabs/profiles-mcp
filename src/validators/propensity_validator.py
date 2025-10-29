@@ -30,7 +30,7 @@ class PropensityValidator:
             project_path: Path to the profiles project directory
             model_name: Name of the propensity model to validate
             warehouse_client: Warehouse client for data validation queries
-            pb_models_data: PBModelsData object from pb mcp models command (optional)
+            pb_models_data: PBModelsData object from pb show model_details command (optional)
         """
         self.project_path = project_path
         self.model_name = model_name
@@ -70,7 +70,6 @@ class PropensityValidator:
             
             # Build input tables map for historic data validation
             input_tables_map = self._create_input_tables_map(self.configs["inputs"])
-            print(f"---input_tables_map: {input_tables_map}")
             
             # Validate using pb_models_data (this is the primary validation)
             self._validate_using_pb_models_data(input_tables_map)
