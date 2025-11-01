@@ -1349,6 +1349,85 @@ For more information, refer to the RudderStack Profiles documentation.
 
         return {"valid": True}
 
+    @staticmethod
+    def _compare_semver(version_str: str, required_version: str) -> bool:
+        """
+        Compare semantic versions.
+        
+        Args:
+            version_str: Version string to check (e.g., "0.23.3")
+            required_version: Minimum required version (e.g., "0.24.0")
+        
+        Returns:
+            bool: True if version_str >= required_version, False otherwise
+        """
+        def parse_version(v: str) -> tuple:
+            """Parse version string into tuple of integers for comparison."""
+            parts = v.split('.')
+            return tuple(int(part) for part in parts)
+        
+        try:
+            current = parse_version(version_str)
+            required = parse_version(required_version)
+            return current >= required
+        except (ValueError, AttributeError):
+            return False
+    
+    def _check_pb_version(self, model_name: str, min_version: str = "0.24.0") -> dict:
+        """
+        Check if pb CLI version meets minimum requirement.
+        
+        Args:
+            model_name: Name of the model being validated
+            min_version: Minimum required version (default: "0.24.0")
+        
+        Returns:
+            dict: None if version is sufficient, or error dict if version is too old
+        """
+        try:
+            result = subprocess.run(
+                ["pb", "version"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            if result.returncode != 0:
+                logger.warning(f"Failed to check pb version: {result.stderr}")
+                return None  # Proceed with validation attempt
+            
+            # Parse version from stdout using regex to capture va.b.c format
+            version_match = re.search(r'v(\d+\.\d+\.\d+)', result.stdout)
+            if not version_match:
+                logger.warning(f"Could not parse pb version from: {result.stdout}")
+                return None
+            
+            version_str = version_match.group(1)
+
+            logger.info(f"pb version: {version_str}")
+            
+            if not self._compare_semver(version_str, min_version):
+                return {
+                    "model_name": model_name,
+                    "validation_status": "PASSED",
+                    "errors": [],
+                    "warnings": [],
+                    "suggestions": [{
+                        "type": "PB_VERSION_LIMITATION",
+                        "message": f"Advanced propensity model validation requires pb CLI version {min_version} or later. Your current version does not support the 'pb show model_details' command.",
+                        "context": "This validation step provides comprehensive dependency analysis and data quality checks. Without it, basic configuration validation still runs.",
+                        "note": "This is NOT a reason to upgrade your pb version. The tool works fine without this advanced validation.",
+                        "available_validation": "Basic propensity model spec validation is still performed (predict_window_days, model_spec presence, etc.)",
+                    }],
+                    "table_stats": {}
+                }
+            
+            return None  # Version is sufficient
+            
+        except Exception as e:
+            logger.warning(f"Error checking pb version: {e}")
+            return None
+
     def validate_propensity_model_config(
         self, project_path: str, model_name: str, warehouse_client
     ) -> dict:
@@ -1368,6 +1447,11 @@ For more information, refer to the RudderStack Profiles documentation.
             dict: Structured validation results with errors, warnings, and suggestions
         """
 
+        # Check pb version before attempting model_details command
+        version_check_result = self._check_pb_version(model_name)
+        if version_check_result is not None:
+            return version_check_result
+
         # Run pb show model_details command to get the models JSON
         output_file = None
         try:
@@ -1375,7 +1459,7 @@ For more information, refer to the RudderStack Profiles documentation.
                 mode='w', suffix='.json', delete=False
             ).name
             
-            cmd = f"pb show model_details -p {project_path} --migrate_on_load > {output_file}"
+            cmd = f"/Users/sp/rudderstack/codes/wht/wht show model_details -p {project_path} --migrate_on_load > {output_file}"
             result = subprocess.run(
                 cmd,
                 shell=True,
