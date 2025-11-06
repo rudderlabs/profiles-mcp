@@ -1395,11 +1395,11 @@ For more information, refer to the RudderStack Profiles documentation.
             if result.returncode != 0:
                 logger.warning(f"Failed to check pb version: {result.stderr}")
                 return None  # Proceed with validation attempt
-            
+            output = result.stderr + result.stdout 
             # Parse version from stdout using regex to capture va.b.c format
-            version_match = re.search(r'v(\d+\.\d+\.\d+)', result.stdout)
+            version_match = re.search(r'v(\d+\.\d+\.\d+)', output)
             if not version_match:
-                logger.warning(f"Could not parse pb version from: {result.stdout}")
+                logger.warning(f"Could not parse pb version from: {output}")
                 return None
             
             version_str = version_match.group(1)
@@ -1459,7 +1459,7 @@ For more information, refer to the RudderStack Profiles documentation.
                 mode='w', suffix='.json', delete=False
             ).name
             
-            cmd = f"/Users/sp/rudderstack/codes/wht/wht show model_details -p {project_path} --migrate_on_load > {output_file}"
+            cmd = f"pb show model_details -p {project_path} --migrate_on_load > {output_file}"
             result = subprocess.run(
                 cmd,
                 shell=True,

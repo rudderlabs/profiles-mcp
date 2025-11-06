@@ -14,6 +14,7 @@ The Profiles MCP Server enables you to build RudderStack Profiles projects using
   - **Redshift**: Cluster or Serverless access with read/write permissions
 - **RudderStack Personal Access Token**: Generate one from your [RudderStack dashboard](https://www.rudderstack.com/docs/dashboard-guides/personal-access-token/#generate-personal-access-token)
 - **AI Client with MCP Support**: See [AI Client Support](#ai-client-support) section below
+- **Pb Version Recommendation**: It is recommended to have pb (profiles-rudderstack) version `v0.24.0` or above installed if you want to build propensity models.
 
 ### Authentication Requirements
 
