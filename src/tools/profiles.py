@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 
 from utils.pb_models_parser import PBModelsParser
 from validators.propensity_validator import PropensityValidator
@@ -1452,14 +1451,10 @@ For more information, refer to the RudderStack Profiles documentation.
         if version_check_result is not None:
             return version_check_result
 
+
         # Run pb show model_details command to get the models JSON
-        output_file = None
         try:
-            output_file = tempfile.NamedTemporaryFile(
-                mode='w', suffix='.json', delete=False
-            ).name
-            
-            cmd = f"pb show model_details -p {project_path} --migrate_on_load > {output_file}"
+            cmd = [f"/Users/sp/rudderstack/codes/wht/wht show model_details -p {project_path} --migrate_on_load"]
             result = subprocess.run(
                 cmd,
                 shell=True,
@@ -1483,8 +1478,8 @@ For more information, refer to the RudderStack Profiles documentation.
                     "table_stats": {}
                 }
             
-            # Parse the JSON output
-            pb_models_data = PBModelsParser.from_json_file(output_file)
+            logger.debug(f"pb show model_details command output: {result.stdout}")
+            pb_models_data = PBModelsParser.from_json_string(result.stdout)
             
         except Exception as e:
             logger.error(f"Error running pb show model_details: {e}")
@@ -1500,10 +1495,6 @@ For more information, refer to the RudderStack Profiles documentation.
                 "suggestions": [],
                 "table_stats": {}
             }
-        finally:
-            # Clean up temp file
-            if output_file is not None:
-                os.unlink(output_file)
         
         validator = PropensityValidator(
             project_path, model_name, warehouse_client, pb_models_data
