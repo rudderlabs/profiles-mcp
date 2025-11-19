@@ -47,7 +47,7 @@ class About:
 
         return topic_mapping[topic]()
 
-    
+
     def _get_virtual_env_section(self) -> str:
         """Generate virtual environment setup section based on environment."""
         if is_cloud_based_environment():
@@ -68,7 +68,7 @@ source .venv/bin/activate
 pip install profiles-rudderstack
 pip install profiles_mlcorelib>=0.8.1
 ```"""
-        
+
         return virtual_env_section
 
     def about_profiles(self) -> str:
@@ -338,7 +338,7 @@ pb run --begin_time '2024-11-01T00:00:00Z'
 
     def about_pb_cli(self) -> str:
         virtual_env_section = self._get_virtual_env_section()
-        
+
         docs = f"""
 # Profile Builder CLI Commands
 
@@ -1080,8 +1080,8 @@ vars:
 # Propensity Score Configuration
 
 ## Overview
-'propensity' is a model type within profiles. There are two types of propensity models: classification and regression. 
-With this, you can build classification and regression models to predict the future revenue/likelihood of user actions etc using machine learning (ML) algorithms. 
+'propensity' is a model type within profiles. There are two types of propensity models: classification and regression.
+With this, you can build classification and regression models to predict the future revenue/likelihood of user actions etc using machine learning (ML) algorithms.
 These predictive capabilities enable data-driven decision-making by calculating scores that represent the users' likely future state within a predefined timeframe.
 
 ## Use Cases
@@ -1169,8 +1169,8 @@ Regression is for numeric outcomes like revenue, LTV, days to convert.
 If the label entity-var is already defined in the project, you can skip this step and reuse that.
 Identify the action you want to predict (e.g., churn, conversion, purchase)
 
-**Note**: 
-* For classification tasks, the label must be Boolean/Binary (0/1, true/false, yes/no) 
+**Note**:
+* For classification tasks, the label must be Boolean/Binary (0/1, true/false, yes/no)
 * For regression tasks, the label must be numeric.
 ```yaml
 var_groups:
@@ -1181,7 +1181,7 @@ var_groups:
       # In case of payer-conversion
       - entity_var:
             name: is_payer
-            select: case when user.revenue > 0 then 1 else 0 end # Assuming revenue entity-var is already defined. 
+            select: case when user.revenue > 0 then 1 else 0 end # Assuming revenue entity-var is already defined.
       # In case of 30 day LTV/Revenue after first seen
       - entity_var:
             name: future_revenue_30_days
@@ -1251,7 +1251,7 @@ When suggesting predict_window_days and eligible_users, consider these contextua
 - **LTV (retention)**: 90 days - subscription retargeting
 - **Churn (high engagement)**: 7 days - gaming, daily active apps
 - **Churn (low frequency)**: 90-180 days - occasional usage products
-- **Lead Score**: 7 days - quick conversion decisions 
+- **Lead Score**: 7 days - quick conversion decisions
 
 ### Step 5: Define Eligible Users
 
@@ -1290,7 +1290,7 @@ These examples provide starting points, but always adapt based on the specific u
 ### Step 6: Name Output Features
 The model outputs two features:
 1. **Percentile score**: Relative ranking (0-100)
-2. **Prediction score**: 
+2. **Prediction score**:
    - Classification: Probability (0-1)
    - Regression: Numeric value
 
@@ -1404,7 +1404,26 @@ Material_<model_name>_<hash>_<seq_no>/
 ## 🚨 MANDATORY USER INTERACTIONS - AI AGENTS MUST ASK THESE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-### ✅ REQUIRED CHECKPOINT 1: Prediction Window
+### ✅ REQUIRED CHECKPOINT 1: Label Definition (What to Predict)
+**AI MUST ASK WITH RECOMMENDATIONS**: "What outcome would you like to predict? Based on your use case and available data, I recommend:
+
+[Analyze user's goal and available data, then provide 2-3 specific label suggestions, e.g.:]
+Option 1: User made a purchase in the next 30 days (classification)
+Option 2: User revenue in the next 30 days (regression)
+Option 3: User churned after 90 days of inactivity (classification)
+
+Which outcome would you like to predict, or would you like to define a different one?"
+
+**CRITICAL REQUIREMENTS:**
+- Generate intelligent suggestions based on user's stated goal and available data tables
+- Use run_query() to validate that suggested labels can be derived from available data
+- Label should be a descriptive business outcome, NOT a technical column name
+- Examples of GOOD labels: "user made a purchase", "user churned", "user upgraded subscription"
+- Examples of BAD labels: "label_col", "target", "conversion" (too generic/technical)
+
+**WAIT for user to confirm their choice of label definition**
+
+### ✅ REQUIRED CHECKPOINT 2: Prediction Window
 **AI MUST ASK WITH RECOMMENDATIONS**: "What time window do you want to predict? Based on your use case, I recommend:
 [Provide specific recommendation based on use case, e.g.:]
 - For churn prediction in gaming: 7 days (high engagement product)
@@ -1416,7 +1435,7 @@ What prediction window would you like to use?"
 
 **HONOR USER'S CHOICE** even if different from recommendation
 
-### ✅ REQUIRED CHECKPOINT 2: Eligible Users Definition  
+### ✅ REQUIRED CHECKPOINT 3: Eligible Users Definition
 **AI MUST ASK WITH SPECIFIC SUGGESTIONS**: "Which users should be included in model training? Based on your use case, I recommend:
 
 [Provide 2-3 specific SQL criteria options, e.g.:]
@@ -1428,7 +1447,7 @@ Which criteria would you like to use, or would you prefer different criteria?"
 
 **WAIT for user confirmation of exact SQL criteria**
 
-### ✅ REQUIRED CHECKPOINT 3: Output Column Names
+### ✅ REQUIRED CHECKPOINT 4: Output Column Names
 **AI MUST ASK WITH CONTEXTUAL SUGGESTIONS**: "What should I name the prediction outputs? Based on your [churn/LTV/conversion] model, I suggest:
 
 - Percentile score: `[use_case]_likelihood_percentile` (e.g., churn_likelihood_percentile)
@@ -1451,9 +1470,10 @@ Would you like to use these names or prefer different ones?"
    - Event stream vs static table sources
 
 ### 🛑 MANDATORY USER DECISIONS (Always ask):
-1. **Prediction Window**: ALWAYS ask with recommendations
-2. **Eligible Users**: ALWAYS ask with specific SQL suggestions
-3. **Output Names**: ALWAYS ask with contextual suggestions
+1. **Label Definition**: ALWAYS ask with 2-3 auto-generated suggestions based on user goal and data
+2. **Prediction Window**: ALWAYS ask with recommendations
+3. **Eligible Users**: ALWAYS ask with specific SQL suggestions
+4. **Output Names**: ALWAYS ask with contextual suggestions
 
 ### 📋 BEST PRACTICES:
 1. **ALWAYS** provide specific recommendations when asking for input
@@ -1465,8 +1485,9 @@ Would you like to use these names or prefer different ones?"
 
 ### 🚫 BLOCKING CONDITIONS
 AI MUST NOT create propensity config if:
+- User hasn't confirmed label definition (what outcome to predict)
 - User hasn't confirmed prediction window
-- User hasn't approved eligible users criteria  
+- User hasn't approved eligible users criteria
 - User hasn't confirmed output column names
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
