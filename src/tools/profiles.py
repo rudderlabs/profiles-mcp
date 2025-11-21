@@ -1835,6 +1835,9 @@ class PropensityValidator:
             if warehouse_type.lower() == "bigquery":
                 # BigQuery syntax for date difference
                 date_diff_expr = f"DATE_DIFF(DATE(MAX({occurred_at_col})), DATE(MIN({occurred_at_col})), DAY)"
+            elif warehouse_type.lower() == "databricks":
+                # Databricks syntax: only 2 arguments, returns days by default
+                date_diff_expr = f"DATEDIFF(MAX({occurred_at_col}), MIN({occurred_at_col}))"
             else:
                 # Snowflake and other warehouses (default)
                 date_diff_expr = (
