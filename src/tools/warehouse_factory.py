@@ -2,6 +2,7 @@ from typing import Optional, Type
 
 from logger import setup_logger
 from tools.bigquery import BigQuery
+from tools.databricks import Databricks
 from tools.snowflake import Snowflake
 from tools.warehouse_base import BaseWarehouse
 
@@ -19,6 +20,7 @@ class WarehouseFactory:
     _warehouse_classes = {
         "snowflake": Snowflake,
         "bigquery": BigQuery,
+        "databricks": Databricks,
     }
 
     @classmethod
