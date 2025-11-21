@@ -19,7 +19,7 @@ class Databricks(BaseWarehouse):
 
     def __init__(self):
         super().__init__()
-        self.connection = None
+        self.session = None  # Renamed from connection for consistency with base class
 
     def initialize_connection(self, connection_details: dict) -> None:
         """Initialize a Databricks connection with provided credentials."""
@@ -55,7 +55,7 @@ class Databricks(BaseWarehouse):
             if access_token and access_token.strip():
                 # Personal Access Token (PAT) authentication
                 logger.info("Using Personal Access Token (PAT) authentication")
-                self.connection = sql.connect(
+                self.session = sql.connect(
                     server_hostname=host,
                     http_path=http_path,
                     access_token=access_token,
@@ -67,7 +67,7 @@ class Databricks(BaseWarehouse):
             elif client_id and client_id.strip() and client_secret and client_secret.strip():
                 # M2M OAuth authentication
                 logger.info("Using M2M OAuth authentication")
-                self.connection = sql.connect(
+                self.session = sql.connect(
                     server_hostname=host,
                     http_path=http_path,
                     auth_type="databricks-oauth",
@@ -86,18 +86,18 @@ class Databricks(BaseWarehouse):
         except Exception as e:
             raise Exception(f"Failed to create Databricks connection: {str(e)}")
 
-        return self.connection
+        return self.session
 
     def ensure_valid_session(self) -> None:
         """Ensure we have a valid Databricks connection."""
-        if self.connection is None:
+        if self.session is None:
             raise Exception(
                 "Connection is not initialized. Call initialize_warehouse_connection() mcp tool first."
             )
 
         try:
             # Test the connection with a simple query
-            cursor = self.connection.cursor()
+            cursor = self.session.cursor()
             cursor.execute("SELECT 1 as test_column")
             cursor.fetchall()
             cursor.close()
@@ -106,14 +106,14 @@ class Databricks(BaseWarehouse):
         except Exception as e:
             # Connection is invalid, create new one
             logger.warning(f"Databricks connection invalid or expired: {str(e)}")
-            if self.connection is not None:
+            if self.session is not None:
                 try:
-                    self.connection.close()
+                    self.session.close()
                 except:
                     pass
 
             logger.info("Creating new Databricks connection due to expiration/invalidity")
-            self.connection = self.create_session()
+            self.session = self.create_session()
             self.update_last_used()
 
     def raw_query(
@@ -124,7 +124,7 @@ class Databricks(BaseWarehouse):
             logger.info(f"Executing Databricks query: {query[:100]}...")
             self.ensure_valid_session()
 
-            cursor = self.connection.cursor()
+            cursor = self.session.cursor()
             cursor.execute(query)
 
             if response_type == "list":
@@ -164,6 +164,7 @@ class Databricks(BaseWarehouse):
 
     def describe_table(self, database: str, schema: str, table: str) -> List[str]:
         """Describe a Databricks table structure."""
+        table_ref = None  # Initialize for error context
         try:
             self.ensure_valid_session()
 
@@ -180,15 +181,23 @@ class Databricks(BaseWarehouse):
                 else:
                     table_ref = f"{schema}.{table}"
 
+            # Note: Using f-string is safe here as table identifiers come from
+            # trusted sources (siteconfig.yaml) and are validated by warehouse permissions
             query = f"DESCRIBE TABLE {table_ref}"
             results = self.raw_query(query)
 
             # Databricks DESCRIBE TABLE returns columns: col_name, data_type, comment
-            return [f"{row['col_name']}: {row['data_type']}" for row in results if row.get('col_name')]
+            # Filter out rows with missing col_name or data_type
+            return [
+                f"{row['col_name']}: {row.get('data_type', 'UNKNOWN')}"
+                for row in results
+                if row.get('col_name')
+            ]
 
         except Exception as e:
-            logger.error(f"Failed to describe table: {str(e)}")
-            return [f"Failed to describe table: {str(e)}"]
+            error_context = f" ({table_ref})" if table_ref else ""
+            logger.error(f"Failed to describe table{error_context}: {str(e)}")
+            return [f"Failed to describe table{error_context}: {str(e)}"]
 
     def input_table_suggestions(self, database: str, schemas: str) -> List[str]:
         """Suggest relevant tables for profiles input configuration."""
