@@ -10,6 +10,7 @@ The Profiles MCP Server enables you to build RudderStack Profiles projects using
 - **Data Warehouse Access** with appropriate permissions:
   - **Snowflake**: Read access to input tables and write access to output schema
   - **BigQuery**: Read access to input datasets and write access to output dataset
+  - **Databricks**: SQL warehouse or cluster access with read/write permissions
 - **RudderStack Personal Access Token**: Generate one from your [RudderStack dashboard](https://www.rudderstack.com/docs/dashboard-guides/personal-access-token/#generate-personal-access-token)
 - **AI Client with MCP Support**: See [AI Client Support](#ai-client-support) section below
 
@@ -17,6 +18,7 @@ The Profiles MCP Server enables you to build RudderStack Profiles projects using
 
 - **Snowflake**: MFA (Multi-Factor Authentication) is not supported. If your account has MFA enabled, use [key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth) instead
 - **BigQuery**: Supports Service Account JSON files and Application Default Credentials
+- **Databricks**: Supports Personal Access Token (PAT) and M2M OAuth authentication
 
 ## AI Client Support
 
@@ -164,12 +166,13 @@ The MCP Server provides a comprehensive toolkit that enables AI assistants to bu
 |-----------|--------|----------------------|-------|
 | **Snowflake** | ✅ Fully Supported | Username/Password, Key Pair, SSO | MFA not supported, use key-pair auth instead |
 | **BigQuery** | ✅ Fully Supported | Service Account JSON, Application Default Credentials | Project-based permissions required |
+| **Databricks** | ✅ Fully Supported | Personal Access Token (PAT), M2M OAuth | Supports both Unity Catalog and legacy 2-level namespace |
 
 ## Roadmap
 
 We're continuously improving the Profiles MCP Server. Upcoming features include:
 - Enhanced analysis tools for profiles output tables
-- Additional warehouse support (Redshift, Databricks)
+- Additional warehouse support (Redshift, and others)
 - Advanced debugging and validation capabilities
 
 ## Advanced Configuration
