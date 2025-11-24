@@ -216,3 +216,129 @@ class Snowflake(BaseWarehouse):
         except Exception as e:
             logger.error(f"Failed to describe table: {str(e)}")
             return [f"Failed to describe table: {str(e)}"]
+
+    def show_databases(self, like_pattern: str = None) -> List[str]:
+        """
+        Show all databases, optionally filtered by a LIKE pattern.
+
+        Args:
+            like_pattern: Optional SQL LIKE pattern (e.g., '%abc%', 'prod%')
+
+        Returns:
+            List of database names with their kinds
+        """
+        try:
+            self.ensure_valid_session()
+            query = "SHOW DATABASES"
+            if like_pattern:
+                query += f" LIKE '{like_pattern}'"
+            results = self.raw_query(query)
+            return [f"{row['name']}: {row['kind']}" for row in results]
+        except Exception as e:
+            logger.error(f"Failed to show databases: {str(e)}")
+            return [f"Failed to show databases: {str(e)}"]
+
+    def show_schemas(self, database: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all schemas, optionally filtered by database and/or LIKE pattern.
+
+        Args:
+            database: Optional database name to show schemas from
+            like_pattern: Optional SQL LIKE pattern (e.g., 'P', 'prod', 'test')
+
+        Returns:
+            List of schema names
+
+        Examples:
+            show_schemas() -> SHOW SCHEMAS
+            show_schemas(database='DB_NAME') -> SHOW SCHEMAS IN DATABASE DB_NAME
+            show_schemas(like_pattern='P') -> SHOW SCHEMAS LIKE '%P%'
+            show_schemas(database='DB_NAME', like_pattern='P') -> SHOW SCHEMAS LIKE '%P%' IN DATABASE DB_NAME
+        """
+        try:
+            self.ensure_valid_session()
+            query = "SHOW SCHEMAS"
+
+            if like_pattern:
+                query += f" LIKE '%{like_pattern}%'"
+
+            if database:
+                query += f" IN DATABASE {database}"
+
+            results = self.raw_query(query)
+            return [f"schema={row['name']}, db={row['database_name']}" for row in results]
+        except Exception as e:
+            logger.error(f"Failed to show schemas: {str(e)}")
+            return [f"Failed to show schemas: {str(e)}"]
+
+    def show_tables(self, schema: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all tables, optionally filtered by schema and/or LIKE pattern.
+
+        Args:
+            schema: Optional schema name (can be 'SCHEMA' or 'DATABASE.SCHEMA' format)
+            like_pattern: Optional SQL LIKE pattern (e.g., '%mcp%', 'prod%')
+
+        Returns:
+            List of table information strings (table name, schema name, db name, and row count)
+
+        Examples:
+            show_tables() -> SHOW TABLES
+            show_tables(schema='DATABASE.SCHEMA') -> SHOW TABLES IN SCHEMA DATABASE.SCHEMA
+            show_tables(like_pattern='%mcp%') -> SHOW TABLES LIKE '%mcp%'
+            show_tables(schema='DATABASE.SCHEMA', like_pattern='%mcp%') -> SHOW TABLES LIKE '%mcp%' IN SCHEMA DATABASE.SCHEMA
+        """
+        try:
+            self.ensure_valid_session()
+            query = "SHOW TABLES"
+
+            if like_pattern:
+                query += f" LIKE '{like_pattern}'"
+
+            if schema:
+                query += f" IN SCHEMA {schema}"
+
+            results = self.raw_query(query)
+            return [
+                f"table={row['name']}, schema={row['schema_name']}, db={row['database_name']}, rows={row['rows']}"
+                for row in results
+            ]
+        except Exception as e:
+            logger.error(f"Failed to show tables: {str(e)}")
+            return [f"Failed to show tables: {str(e)}"]
+
+    def show_views(self, schema: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all views, optionally filtered by schema and/or LIKE pattern.
+
+        Args:
+            schema: Optional schema name (can be 'SCHEMA' or 'DATABASE.SCHEMA' format)
+            like_pattern: Optional SQL LIKE pattern (e.g., '%mcp%', 'prod%')
+
+        Returns:
+            List of view information strings (view name, schema name, db name, and view text)
+
+        Examples:
+            show_views() -> SHOW VIEWS
+            show_views(schema='DATABASE.SCHEMA') -> SHOW VIEWS IN SCHEMA DATABASE.SCHEMA
+            show_views(like_pattern='%mcp%') -> SHOW VIEWS LIKE '%mcp%'
+            show_views(schema='DATABASE.SCHEMA', like_pattern='%mcp%') -> SHOW VIEWS LIKE '%mcp%' IN SCHEMA DATABASE.SCHEMA
+        """
+        try:
+            self.ensure_valid_session()
+            query = "SHOW VIEWS"
+
+            if like_pattern:
+                query += f" LIKE '{like_pattern}'"
+
+            if schema:
+                query += f" IN SCHEMA {schema}"
+
+            results = self.raw_query(query)
+            return [
+                f"view={row['name']}, schema={row['schema_name']}, db={row['database_name']}, text={row['text']}"
+                for row in results
+            ]
+        except Exception as e:
+            logger.error(f"Failed to show views: {str(e)}")
+            return [f"Failed to show views: {str(e)}"]
