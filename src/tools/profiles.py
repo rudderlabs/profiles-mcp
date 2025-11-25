@@ -1437,6 +1437,19 @@ For more information, refer to the RudderStack Profiles documentation.
                         or output_config.get("schema"),
                     }
                 )
+            elif warehouse_type == "databricks":
+                connection_details.update(
+                    {
+                        "host": output_config.get("host"),
+                        "http_endpoint": output_config.get("http_endpoint"),
+                        "catalog": output_config.get("catalog"),
+                        "schema": output_config.get("schema"),
+                        "access_token": output_config.get("access_token"),
+                        "client_id": output_config.get("client_id"),
+                        "client_secret": output_config.get("client_secret"),
+                        "port": output_config.get("port", 443),
+                    }
+                )
             else:
                 # For future warehouse types, we can add support here
                 logger.warning(
@@ -1822,6 +1835,9 @@ class PropensityValidator:
             if warehouse_type.lower() == "bigquery":
                 # BigQuery syntax for date difference
                 date_diff_expr = f"DATE_DIFF(DATE(MAX({occurred_at_col})), DATE(MIN({occurred_at_col})), DAY)"
+            elif warehouse_type.lower() == "databricks":
+                # Databricks syntax: only 2 arguments, returns days by default
+                date_diff_expr = f"DATEDIFF(MAX({occurred_at_col}), MIN({occurred_at_col}))"
             else:
                 # Snowflake and other warehouses (default)
                 date_diff_expr = (
