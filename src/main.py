@@ -465,6 +465,141 @@ def describe_table(ctx: Context, database: str, schema: str, table: str) -> list
 
 @mcp.tool()
 @track
+def show_databases(ctx: Context, like_pattern: str = None) -> list[str]:
+    """
+    Show all databases in the active warehouse connection, optionally filtered by a LIKE pattern.
+
+    IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
+
+    This tool helps you discover available databases in your warehouse, which is useful for:
+    - Exploring warehouse structure before configuring inputs.yaml
+    - Finding the right database for your Profiles project
+    - Verifying database access and availability
+
+    Args:
+        ctx: The MCP context containing the warehouse session
+        like_pattern: Optional SQL LIKE pattern to filter databases (e.g., '%prod%', 'test%', '%analytics')
+
+    Returns:
+        list[str]: List of database names with their kinds
+
+    Examples:
+        show_databases() -> Shows all databases
+        show_databases(like_pattern='%prod%') -> Shows only databases containing 'prod'
+    """
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+    return warehouse.show_databases(like_pattern=like_pattern)
+
+@mcp.tool()
+@track
+def show_schemas(ctx: Context, database: str = None, like_pattern: str = None) -> list[str]:
+    """
+    Show all schemas in the active warehouse connection, optionally filtered by database and/or LIKE pattern.
+
+    IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
+
+    This tool helps you discover available schemas in your warehouse, which is essential for:
+    - Identifying schemas that contain relevant data for your Profiles project
+    - Understanding database structure before configuring inputs.yaml
+    - Finding the right schema for input_table_suggestions()
+
+    Args:
+        ctx: The MCP context containing the warehouse session
+        database: Optional database name to show schemas from
+        like_pattern: Optional SQL LIKE pattern to filter schemas (e.g., 'prod', 'test', 'P')
+
+    Returns:
+        list[str]: List of schema names with their database names
+
+    Examples:
+        show_schemas() -> SHOW SCHEMAS (all schemas in current database)
+        show_schemas(database='MY_DB') -> SHOW SCHEMAS IN DATABASE MY_DB
+        show_schemas(like_pattern='P') -> SHOW SCHEMAS LIKE '%P%'
+        show_schemas(database='MY_DB', like_pattern='prod') -> SHOW SCHEMAS LIKE '%prod%' IN DATABASE MY_DB
+    """
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+    return warehouse.show_schemas(database=database, like_pattern=like_pattern)
+
+@mcp.tool()
+@track
+def show_tables(ctx: Context, schema: str = None, like_pattern: str = None) -> list[str]:
+    """
+    Show all tables in the active warehouse connection, optionally filtered by schema and/or LIKE pattern.
+
+    IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
+
+    This tool helps you discover available tables in your warehouse, which is crucial for:
+    - Finding tables to use in inputs.yaml configuration
+    - Understanding data structure before running input_table_suggestions()
+    - Verifying table names and locations
+    - Checking row counts to assess data volume
+
+    Args:
+        ctx: The MCP context containing the warehouse session
+        schema: Optional schema name (can be 'SCHEMA' or 'DATABASE.SCHEMA' format)
+        like_pattern: Optional SQL LIKE pattern to filter tables (e.g., '%user%', 'fact_%', '%events')
+
+    Returns:
+        list[str]: List of table information strings including table name, schema name, database name, and row count
+
+    Examples:
+        show_tables() -> SHOW TABLES (all tables in current schema)
+        show_tables(schema='MY_DB.MY_SCHEMA') -> SHOW TABLES IN SCHEMA MY_DB.MY_SCHEMA
+        show_tables(like_pattern='%user%') -> SHOW TABLES LIKE '%user%'
+        show_tables(schema='MY_DB.MY_SCHEMA', like_pattern='fact_%') -> SHOW TABLES LIKE 'fact_%' IN SCHEMA MY_DB.MY_SCHEMA
+    """
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+    return warehouse.show_tables(schema=schema, like_pattern=like_pattern)
+
+@mcp.tool()
+@track
+def show_views(ctx: Context, schema: str = None, like_pattern: str = None) -> list[str]:
+    """
+    Show all views in the active warehouse connection, optionally filtered by schema and/or LIKE pattern.
+
+    IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
+
+    This tool helps you discover available views in your warehouse, which is useful for:
+    - Finding views that can be used as input sources in inputs.yaml
+    - Understanding existing data transformations
+    - Verifying view definitions and locations
+    - Identifying pre-aggregated data sources for features
+
+    Args:
+        ctx: The MCP context containing the warehouse session
+        schema: Optional schema name (can be 'SCHEMA' or 'DATABASE.SCHEMA' format)
+        like_pattern: Optional SQL LIKE pattern to filter views (e.g., '%customer%', 'vw_%', '%summary')
+
+    Returns:
+        list[str]: List of view information strings including view name, schema name, database name, and view definition text
+
+    Examples:
+        show_views() -> SHOW VIEWS (all views in current schema)
+        show_views(schema='MY_DB.MY_SCHEMA') -> SHOW VIEWS IN SCHEMA MY_DB.MY_SCHEMA
+        show_views(like_pattern='%customer%') -> SHOW VIEWS LIKE '%customer%'
+        show_views(schema='MY_DB.MY_SCHEMA', like_pattern='vw_%') -> SHOW VIEWS LIKE 'vw_%' IN SCHEMA MY_DB.MY_SCHEMA
+    """
+    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
+    if not warehouse:
+        raise Exception(
+            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
+        )
+    return warehouse.show_views(schema=schema, like_pattern=like_pattern)
+
+@mcp.tool()
+@track
 def get_profiles_output_details(
     ctx: Context, pb_project_file_path: str, pb_show_models_output_file_path: str
 ) -> dict:
@@ -723,7 +858,7 @@ def profiles_workflow_guide(
 #     - Supports projects with any YAML filename variations
 #     - Requires basic profiles knowledge to interpret results properly
 #       (call about_profiles() first if using via workflow_guide)
-      
+
 #     **Before Calling:**
 #     - This should never be the first tool call in a session. ENSURE YOU HAVE CALLED about_profiles(topic="profiles") before you call this tool.
 

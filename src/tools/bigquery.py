@@ -195,10 +195,10 @@ class BigQuery(BaseWarehouse):
                     for tracks_table in tracks_like_tables:
                         try:
                             query = f"""
-                            SELECT event, COUNT(*) as count 
-                            FROM `{database}.{schema}.{tracks_table}` 
-                            GROUP BY event 
-                            ORDER BY count DESC 
+                            SELECT event, COUNT(*) as count
+                            FROM `{database}.{schema}.{tracks_table}`
+                            GROUP BY event
+                            ORDER BY count DESC
                             LIMIT 20
                             """
                             rows = self.raw_query(query)
@@ -228,3 +228,223 @@ class BigQuery(BaseWarehouse):
         if self.connection_details and self.connection_details.connection_details:
             return self.connection_details.connection_details.get("project_id")
         return None
+
+    def show_databases(self, like_pattern: str = None) -> List[str]:
+        """
+        Show all projects accessible to the current BigQuery client.
+        Note: In BigQuery, "database" is equivalent to "project".
+
+        Args:
+            like_pattern: Optional pattern to filter project IDs (substring match)
+
+        Returns:
+            List of project IDs accessible to the client
+        """
+        try:
+            self.ensure_valid_session()
+
+            # List all projects accessible to the client
+            projects = []
+            for project in self.client.list_projects():
+                project_id = project.project_id
+                project_name = project.friendly_name or project_id
+
+                # Apply like_pattern filter if provided
+                if like_pattern:
+                    if like_pattern.lower() not in project_id.lower():
+                        continue
+
+                projects.append(f"{project_id}: {project_name}")
+
+            return projects
+        except Exception as e:
+            logger.error(f"Failed to show databases (projects): {str(e)}")
+            return [f"Failed to show databases: {str(e)}"]
+
+    def show_schemas(self, database: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all datasets (schemas) in BigQuery.
+        Note: In BigQuery, "schema" is equivalent to "dataset".
+
+        Args:
+            database: Optional project ID to show datasets from (defaults to current project)
+            like_pattern: Optional pattern to filter dataset names (substring match)
+
+        Returns:
+            List of dataset names with their project IDs
+
+        Examples:
+            show_schemas() -> List datasets in current project
+            show_schemas(database='my-project') -> List datasets in 'my-project'
+            show_schemas(like_pattern='prod') -> List datasets containing 'prod'
+            show_schemas(database='my-project', like_pattern='prod') -> List datasets containing 'prod' in 'my-project'
+        """
+        try:
+            self.ensure_valid_session()
+
+            # Use provided database (project) or default to current project
+            project_id = database or self.client.project
+
+            # List all datasets in the project
+            datasets = []
+            for dataset in self.client.list_datasets(project=project_id):
+                dataset_id = dataset.dataset_id
+
+                # Apply like_pattern filter if provided
+                if like_pattern:
+                    if like_pattern.lower() not in dataset_id.lower():
+                        continue
+
+                datasets.append(f"schema={dataset_id}, db={project_id}")
+
+            return datasets
+        except Exception as e:
+            logger.error(f"Failed to show schemas (datasets): {str(e)}")
+            return [f"Failed to show schemas: {str(e)}"]
+
+    def show_tables(self, schema: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all tables in BigQuery.
+
+        Args:
+            schema: Optional schema name (can be 'DATASET' or 'PROJECT.DATASET' format)
+            like_pattern: Optional pattern to filter table names (substring match)
+
+        Returns:
+            List of table information strings (table name, schema name, db name, and row count)
+
+        Examples:
+            show_tables() -> List all tables in current dataset
+            show_tables(schema='my_dataset') -> List tables in 'my_dataset' of current project
+            show_tables(schema='my-project.my_dataset') -> List tables in specific project.dataset
+            show_tables(like_pattern='user') -> List tables containing 'user'
+            show_tables(schema='my_dataset', like_pattern='fact_') -> List tables starting with 'fact_' in 'my_dataset'
+        """
+        try:
+            self.ensure_valid_session()
+
+            # Parse schema to get project and dataset
+            if schema:
+                if '.' in schema:
+                    # Format: PROJECT.DATASET
+                    project_id, dataset_id = schema.split('.', 1)
+                else:
+                    # Format: DATASET (use current project)
+                    project_id = self.client.project
+                    dataset_id = schema
+            else:
+                # Use current project and default dataset if available
+                project_id = self.client.project
+                # Try to get default dataset from connection details
+                dataset_id = self.connection_details.connection_details.get('schema')
+                if not dataset_id:
+                    return ["Error: No schema specified and no default schema configured"]
+
+            # List all tables in the dataset
+            tables_list = []
+            dataset_ref = f"{project_id}.{dataset_id}"
+
+            for table in self.client.list_tables(dataset_ref):
+                table_id = table.table_id
+
+                # Apply like_pattern filter if provided
+                if like_pattern:
+                    # Remove leading/trailing % for substring match
+                    pattern = like_pattern.strip('%')
+                    if pattern.lower() not in table_id.lower():
+                        continue
+
+                # Get table details including row count
+                try:
+                    table_ref = f"{project_id}.{dataset_id}.{table_id}"
+                    table_obj = self.client.get_table(table_ref)
+                    row_count = table_obj.num_rows if table_obj.num_rows is not None else 0
+                except Exception:
+                    row_count = "unknown"
+
+                tables_list.append(
+                    f"table={table_id}, schema={dataset_id}, db={project_id}, rows={row_count}"
+                )
+
+            return tables_list
+        except Exception as e:
+            logger.error(f"Failed to show tables: {str(e)}")
+            return [f"Failed to show tables: {str(e)}"]
+
+    def show_views(self, schema: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all views in BigQuery.
+
+        Args:
+            schema: Optional schema name (can be 'DATASET' or 'PROJECT.DATASET' format)
+            like_pattern: Optional pattern to filter view names (substring match)
+
+        Returns:
+            List of view information strings (view name, schema name, db name, and view definition)
+
+        Examples:
+            show_views() -> List all views in current dataset
+            show_views(schema='my_dataset') -> List views in 'my_dataset' of current project
+            show_views(schema='my-project.my_dataset') -> List views in specific project.dataset
+            show_views(like_pattern='customer') -> List views containing 'customer'
+            show_views(schema='my_dataset', like_pattern='vw_') -> List views starting with 'vw_' in 'my_dataset'
+        """
+        try:
+            self.ensure_valid_session()
+
+            # Parse schema to get project and dataset
+            if schema:
+                if '.' in schema:
+                    # Format: PROJECT.DATASET
+                    project_id, dataset_id = schema.split('.', 1)
+                else:
+                    # Format: DATASET (use current project)
+                    project_id = self.client.project
+                    dataset_id = schema
+            else:
+                # Use current project and default dataset if available
+                project_id = self.client.project
+                # Try to get default dataset from connection details
+                dataset_id = self.connection_details.connection_details.get('schema')
+                if not dataset_id:
+                    return ["Error: No schema specified and no default schema configured"]
+
+            # List all tables in the dataset and filter for views
+            views_list = []
+            dataset_ref = f"{project_id}.{dataset_id}"
+
+            for table in self.client.list_tables(dataset_ref):
+                table_id = table.table_id
+
+                # Get table details to check if it's a view
+                try:
+                    table_ref = f"{project_id}.{dataset_id}.{table_id}"
+                    table_obj = self.client.get_table(table_ref)
+
+                    # Skip if not a view
+                    if table_obj.table_type != "VIEW":
+                        continue
+
+                    # Apply like_pattern filter if provided
+                    if like_pattern:
+                        # Remove leading/trailing % for substring match
+                        pattern = like_pattern.strip('%')
+                        if pattern.lower() not in table_id.lower():
+                            continue
+
+                    # Get view definition (truncate if too long)
+                    view_query = table_obj.view_query or "N/A"
+                    if len(view_query) > 200:
+                        view_query = view_query[:200] + "..."
+
+                    views_list.append(
+                        f"view={table_id}, schema={dataset_id}, db={project_id}, text={view_query}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to get details for {table_id}: {str(e)}")
+                    continue
+
+            return views_list
+        except Exception as e:
+            logger.error(f"Failed to show views: {str(e)}")
+            return [f"Failed to show views: {str(e)}"]
