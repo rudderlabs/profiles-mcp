@@ -1,4 +1,5 @@
 from typing import Union, List, Dict
+import re
 
 import pandas as pd
 import snowflake.snowpark
@@ -9,6 +10,68 @@ from snowflake.snowpark import Session
 from tools.warehouse_base import BaseWarehouse, WarehouseConnectionDetails
 
 logger = setup_logger(__name__)
+
+
+def _validate_identifier(identifier: str, param_name: str) -> str:
+    """
+    Validate and sanitize a Snowflake identifier (database, schema, table name).
+
+    Args:
+        identifier: The identifier to validate
+        param_name: Name of the parameter for error messages
+
+    Returns:
+        Sanitized identifier
+
+    Raises:
+        ValueError: If identifier contains invalid characters
+    """
+    if not identifier or not identifier.strip():
+        raise ValueError(f"{param_name} cannot be empty or whitespace")
+
+    identifier = identifier.strip()
+
+    # Allow alphanumeric, underscore, hyphen, period (for qualified names)
+    # This covers most valid Snowflake identifiers
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', identifier):
+        raise ValueError(
+            f"{param_name} contains invalid characters. "
+            f"Only alphanumeric, underscore, hyphen, and period are allowed: {identifier}"
+        )
+
+    return identifier
+
+
+def _validate_like_pattern(pattern: str) -> str:
+    """
+    Validate and sanitize a LIKE pattern for Snowflake queries.
+
+    Args:
+        pattern: The LIKE pattern to validate
+
+    Returns:
+        Sanitized pattern with escaped single quotes
+
+    Raises:
+        ValueError: If pattern is invalid
+    """
+    if not pattern or not pattern.strip():
+        raise ValueError("LIKE pattern cannot be empty or whitespace")
+
+    pattern = pattern.strip()
+
+    # Allow alphanumeric, underscore, percent, hyphen, and common punctuation
+    # Underscore and percent are SQL wildcards
+    if not re.match(r'^[a-zA-Z0-9_.%*-]+$', pattern):
+        raise ValueError(
+            f"LIKE pattern contains invalid characters. "
+            f"Only alphanumeric, underscore, percent, hyphen, and period are allowed: {pattern}"
+        )
+
+    # Escape single quotes by doubling them (SQL standard)
+    pattern = pattern.replace("'", "''")
+
+    return pattern
 
 
 class Snowflake(BaseWarehouse):
@@ -216,3 +279,135 @@ class Snowflake(BaseWarehouse):
         except Exception as e:
             logger.error(f"Failed to describe table: {str(e)}")
             return [f"Failed to describe table: {str(e)}"]
+
+    def show_databases(self, like_pattern: str = None) -> List[str]:
+        """
+        Show all databases, optionally filtered by a LIKE pattern.
+
+        Args:
+            like_pattern: Optional SQL LIKE pattern (e.g., '%abc%', 'prod%', 'test_db')
+                         Use % for wildcard matching, _ for single character
+
+        Returns:
+            List of database names with their kinds
+
+        Raises:
+            ValueError: If like_pattern contains invalid characters
+        """
+        try:
+            self.ensure_valid_session()
+            query = "SHOW DATABASES"
+            if like_pattern:
+                sanitized_pattern = _validate_like_pattern(like_pattern)
+                query += f" LIKE '{sanitized_pattern}'"
+            results = self.raw_query(query)
+            # Handle both uppercase and lowercase keys from Snowflake
+            return [
+                f"{row.get('name') or row.get('NAME')}: {row.get('kind') or row.get('KIND')}"
+                for row in results
+            ]
+        except ValueError as e:
+            # Re-raise validation errors
+            logger.error(f"Invalid parameter for show_databases: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to show databases: {str(e)}")
+            return [f"Failed to show databases: {str(e)}"]
+
+    def show_schemas(self, database: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all schemas, optionally filtered by database and/or LIKE pattern.
+
+        Args:
+            database: Optional database name to show schemas from
+            like_pattern: Optional SQL LIKE pattern (e.g., '%prod%', 'public', 'test_%')
+                         Use % for wildcard matching, _ for single character
+
+        Returns:
+            List of schema names with their database names
+
+        Examples:
+            show_schemas() -> SHOW SCHEMAS
+            show_schemas(database='DB_NAME') -> SHOW SCHEMAS IN DATABASE DB_NAME
+            show_schemas(like_pattern='%prod%') -> SHOW SCHEMAS LIKE '%prod%'
+            show_schemas(database='DB_NAME', like_pattern='test_%') -> SHOW SCHEMAS LIKE 'test_%' IN DATABASE DB_NAME
+
+        Raises:
+            ValueError: If database or like_pattern contains invalid characters
+        """
+        try:
+            self.ensure_valid_session()
+            query = "SHOW SCHEMAS"
+
+            if like_pattern:
+                sanitized_pattern = _validate_like_pattern(like_pattern)
+                query += f" LIKE '{sanitized_pattern}'"
+
+            if database:
+                sanitized_database = _validate_identifier(database, "database")
+                query += f" IN DATABASE {sanitized_database}"
+
+            results = self.raw_query(query)
+            # Handle both uppercase and lowercase keys from Snowflake
+            return [
+                f"schema={row.get('name') or row.get('NAME')}, db={row.get('database_name') or row.get('DATABASE_NAME')}"
+                for row in results
+            ]
+        except ValueError as e:
+            # Re-raise validation errors
+            logger.error(f"Invalid parameter for show_schemas: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to show schemas: {str(e)}")
+            return [f"Failed to show schemas: {str(e)}"]
+
+    def show_tables(self, schema: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all tables, optionally filtered by schema and/or LIKE pattern.
+
+        Args:
+            schema: Optional schema name (can be 'SCHEMA' or 'DATABASE.SCHEMA' format)
+            like_pattern: Optional SQL LIKE pattern (e.g., '%user%', 'fact_%', 'dim_product')
+                         Use % for wildcard matching, _ for single character
+
+        Returns:
+            List of table information strings (table name, schema name, db name, and row count)
+
+        Examples:
+            show_tables() -> SHOW TABLES (uses current schema)
+            show_tables(schema='DATABASE.SCHEMA') -> SHOW TABLES IN SCHEMA DATABASE.SCHEMA
+            show_tables(like_pattern='%user%') -> SHOW TABLES LIKE '%user%'
+            show_tables(schema='DATABASE.SCHEMA', like_pattern='fact_%') -> SHOW TABLES LIKE 'fact_%' IN SCHEMA DATABASE.SCHEMA
+
+        Raises:
+            ValueError: If schema or like_pattern contains invalid characters
+        """
+        try:
+            self.ensure_valid_session()
+            query = "SHOW TABLES"
+
+            if like_pattern:
+                sanitized_pattern = _validate_like_pattern(like_pattern)
+                query += f" LIKE '{sanitized_pattern}'"
+
+            if schema:
+                sanitized_schema = _validate_identifier(schema, "schema")
+                query += f" IN SCHEMA {sanitized_schema}"
+
+            results = self.raw_query(query)
+            # Handle both uppercase and lowercase keys from Snowflake
+            return [
+                f"table={row.get('name') or row.get('NAME')}, "
+                f"schema={row.get('schema_name') or row.get('SCHEMA_NAME')}, "
+                f"db={row.get('database_name') or row.get('DATABASE_NAME')}, "
+                f"rows={row.get('rows') or row.get('ROWS')}"
+                for row in results
+            ]
+        except ValueError as e:
+            # Re-raise validation errors
+            logger.error(f"Invalid parameter for show_tables: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to show tables: {str(e)}")
+            return [f"Failed to show tables: {str(e)}"]
+
