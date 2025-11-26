@@ -167,24 +167,6 @@ class BaseWarehouse(ABC):
         """
         pass
 
-    @abstractmethod
-    def show_views(self, schema: str = None, like_pattern: str = None) -> List[str]:
-        """
-        Show all views in the warehouse, optionally filtered by schema and/or LIKE pattern.
-
-        Args:
-            schema: Optional schema name (can be 'SCHEMA' or 'DATABASE.SCHEMA' format)
-            like_pattern: Optional SQL LIKE pattern (e.g., '%customer%', 'vw_%')
-                         Use % for wildcard matching, _ for single character
-
-        Returns:
-            List of view information strings including view name, schema, database, and definition
-
-        Raises:
-            ValueError: If schema or like_pattern contains invalid characters
-        """
-        pass
-
     def query(self, query: str) -> Union[List[Dict], pd.DataFrame]:
         """
         Execute SQL query with automatic response type detection.
