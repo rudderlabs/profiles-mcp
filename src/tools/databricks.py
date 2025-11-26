@@ -296,3 +296,219 @@ class Databricks(BaseWarehouse):
             logger.error(f"Error in input table suggestions: {str(e)}")
 
         return list(set(suggestions))  # Remove duplicates
+
+    def show_databases(self, like_pattern: str = None) -> List[str]:
+        """
+        Show all catalogs/databases in Databricks.
+        In Unity Catalog mode: Shows catalogs using SHOW CATALOGS
+        In Legacy mode: Shows databases using SHOW DATABASES
+
+        Args:
+            like_pattern: Optional pattern to filter results (substring match)
+
+        Returns:
+            List of catalog/database names
+
+        Examples:
+            show_databases() -> Show all catalogs/databases
+            show_databases(like_pattern='prod') -> Show catalogs/databases containing 'prod'
+        """
+        try:
+            self.ensure_valid_session()
+
+            # Check if Unity Catalog is being used
+            catalog = self.connection_details.connection_details.get("catalog")
+
+            if catalog and catalog.strip():
+                # Unity Catalog mode: Show catalogs
+                query = "SHOW CATALOGS"
+                results = self.raw_query(query)
+
+                # SHOW CATALOGS returns columns like: catalog
+                databases = []
+                for row in results:
+                    catalog_name = row.get("catalog") or row.get("CATALOG")
+                    if catalog_name:
+                        # Apply like_pattern filter if provided
+                        if like_pattern:
+                            if like_pattern.lower() not in catalog_name.lower():
+                                continue
+                        databases.append(f"{catalog_name}: CATALOG")
+
+                return databases
+            else:
+                # Legacy mode: Show databases
+                query = "SHOW DATABASES"
+                results = self.raw_query(query)
+
+                # SHOW DATABASES returns columns like: databaseName
+                databases = []
+                for row in results:
+                    db_name = row.get("databaseName") or row.get("DATABASENAME")
+                    if db_name:
+                        # Apply like_pattern filter if provided
+                        if like_pattern:
+                            if like_pattern.lower() not in db_name.lower():
+                                continue
+                        databases.append(f"{db_name}: DATABASE")
+
+                return databases
+
+        except Exception as e:
+            logger.error(f"Failed to show databases: {str(e)}")
+            return [f"Failed to show databases: {str(e)}"]
+
+    def show_schemas(self, database: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all schemas in Databricks.
+        In Unity Catalog mode: Shows schemas in a catalog
+        In Legacy mode: Shows schemas (databases)
+
+        Args:
+            database: Optional catalog/database name to show schemas from
+            like_pattern: Optional pattern to filter schema names (substring match)
+
+        Returns:
+            List of schema names with their catalog/database names
+
+        Examples:
+            show_schemas() -> Show all schemas in current catalog
+            show_schemas(database='my_catalog') -> Show schemas in 'my_catalog'
+            show_schemas(like_pattern='prod') -> Show schemas containing 'prod'
+            show_schemas(database='my_catalog', like_pattern='prod') -> Show schemas containing 'prod' in 'my_catalog'
+        """
+        try:
+            self.ensure_valid_session()
+
+            # Check if Unity Catalog is being used
+            catalog = self.connection_details.connection_details.get("catalog")
+
+            if catalog and catalog.strip():
+                # Unity Catalog mode: Show schemas in catalog
+                if database:
+                    query = f"SHOW SCHEMAS IN {database}"
+                    catalog_name = database
+                else:
+                    query = f"SHOW SCHEMAS IN {catalog}"
+                    catalog_name = catalog
+
+                results = self.raw_query(query)
+
+                # SHOW SCHEMAS returns columns like: databaseName
+                schemas = []
+                for row in results:
+                    schema_name = row.get("databaseName") or row.get("DATABASENAME")
+                    if schema_name:
+                        # Apply like_pattern filter if provided
+                        if like_pattern:
+                            if like_pattern.lower() not in schema_name.lower():
+                                continue
+                        schemas.append(f"schema={schema_name}, db={catalog_name}")
+
+                return schemas
+            else:
+                # Legacy mode: Show databases (which are schemas in legacy mode)
+                query = "SHOW DATABASES"
+                results = self.raw_query(query)
+
+                # SHOW DATABASES returns columns like: databaseName
+                schemas = []
+                for row in results:
+                    schema_name = row.get("databaseName") or row.get("DATABASENAME")
+                    if schema_name:
+                        # Apply like_pattern filter if provided
+                        if like_pattern:
+                            if like_pattern.lower() not in schema_name.lower():
+                                continue
+                        # In legacy mode, database parameter is ignored
+                        schemas.append(f"schema={schema_name}, db=default")
+
+                return schemas
+
+        except Exception as e:
+            logger.error(f"Failed to show schemas: {str(e)}")
+            return [f"Failed to show schemas: {str(e)}"]
+
+    def show_tables(self, schema: str = None, like_pattern: str = None) -> List[str]:
+        """
+        Show all tables in Databricks.
+
+        Args:
+            schema: Optional schema name (can be 'SCHEMA' or 'CATALOG.SCHEMA' format)
+            like_pattern: Optional pattern to filter table names (substring match)
+
+        Returns:
+            List of table information strings (table name, schema name, catalog name, and row count)
+
+        Examples:
+            show_tables() -> Show all tables in current schema
+            show_tables(schema='my_schema') -> Show tables in 'my_schema'
+            show_tables(schema='my_catalog.my_schema') -> Show tables in specific catalog.schema
+            show_tables(like_pattern='user') -> Show tables containing 'user'
+            show_tables(schema='my_schema', like_pattern='fact_') -> Show tables starting with 'fact_' in 'my_schema'
+        """
+        try:
+            self.ensure_valid_session()
+
+            # Check if Unity Catalog is being used
+            catalog = self.connection_details.connection_details.get("catalog")
+
+            # Determine schema reference
+            if schema:
+                if '.' in schema:
+                    # Format: CATALOG.SCHEMA
+                    schema_parts = schema.split('.', 1)
+                    catalog_name = schema_parts[0]
+                    schema_name = schema_parts[1]
+                    schema_ref = schema
+                else:
+                    # Format: SCHEMA (use current catalog)
+                    schema_name = schema
+                    if catalog and catalog.strip():
+                        catalog_name = catalog
+                        schema_ref = f"{catalog}.{schema}"
+                    else:
+                        catalog_name = "default"
+                        schema_ref = schema
+            else:
+                # Use current schema from connection details
+                schema_name = self.connection_details.connection_details.get('schema')
+                if not schema_name:
+                    return ["Error: No schema specified and no default schema configured"]
+
+                if catalog and catalog.strip():
+                    catalog_name = catalog
+                    schema_ref = f"{catalog}.{schema_name}"
+                else:
+                    catalog_name = "default"
+                    schema_ref = schema_name
+
+            # Execute SHOW TABLES query
+            query = f"SHOW TABLES IN {schema_ref}"
+            results = self.raw_query(query)
+
+            # Process results
+            tables_list = []
+            for row in results:
+                table_name = row.get("tableName") or row.get("TABLENAME")
+                if table_name:
+                    # Apply like_pattern filter if provided
+                    if like_pattern:
+                        # Remove leading/trailing % for substring match
+                        pattern = like_pattern.strip('%')
+                        if pattern.lower() not in table_name.lower():
+                            continue
+
+                    # Try to get row count if available
+                    # Note: SHOW TABLES might not always return row count
+                    row_count = "unknown"
+
+                    tables_list.append(
+                        f"table={table_name}, schema={schema_name}, db={catalog_name}, rows={row_count}"
+                    )
+
+            return tables_list
+
+        except Exception as e:
+            logger.error(f"Failed to show tables: {str(e)}")
+            return [f"Failed to show tables: {str(e)}"]
