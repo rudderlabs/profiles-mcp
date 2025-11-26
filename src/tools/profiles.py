@@ -1450,6 +1450,20 @@ For more information, refer to the RudderStack Profiles documentation.
                         "port": output_config.get("port", 443),
                     }
                 )
+            elif warehouse_type == "redshift":
+                connection_details.update({
+                    "host": output_config.get("host"),
+                    "port": output_config.get("port", 5439),
+                    "database": output_config.get("dbname"),
+                    "schema": output_config.get("schema", "public"),
+                    "user": output_config.get("user"),
+                    "password": output_config.get("password"),
+                    "secrets_arn": output_config.get("secrets_arn"),
+                    "region": output_config.get("region"),
+                    "cluster_identifier": output_config.get("cluster_identifier"),
+                    "workgroup_name": output_config.get("workgroup_name"),
+                    "iam": output_config.get("iam", False),
+                })
             else:
                 # For future warehouse types, we can add support here
                 logger.warning(
@@ -1838,6 +1852,9 @@ class PropensityValidator:
             elif warehouse_type.lower() == "databricks":
                 # Databricks syntax: only 2 arguments, returns days by default
                 date_diff_expr = f"DATEDIFF(MAX({occurred_at_col}), MIN({occurred_at_col}))"
+            elif warehouse_type.lower() == "redshift":
+                # Redshift syntax: same as Snowflake (3 arguments)
+                date_diff_expr = f"DATEDIFF(day, MIN({occurred_at_col}), MAX({occurred_at_col}))"
             else:
                 # Snowflake and other warehouses (default)
                 date_diff_expr = (
