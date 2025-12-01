@@ -38,7 +38,9 @@ class BaseWarehouse(ABC):
         self.connection_details: WarehouseConnectionDetails = None
 
     @staticmethod
-    def _validate_identifier(identifier: str, identifier_type: str = "identifier") -> None:
+    def _validate_identifier(
+        identifier: str, identifier_type: str = "identifier"
+    ) -> None:
         """
         Validate SQL identifier to prevent SQL injection.
 
@@ -56,7 +58,7 @@ class BaseWarehouse(ABC):
             raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
 
         # Allow alphanumeric, underscore, and dot (for qualified names)
-        if not re.match(r'^[a-zA-Z0-9_.]+$', identifier):
+        if not re.match(r"^[a-zA-Z0-9_.]+$", identifier):
             raise ValueError(
                 f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
                 f"Only alphanumeric characters, underscores, and dots are allowed."

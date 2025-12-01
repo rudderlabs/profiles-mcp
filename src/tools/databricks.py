@@ -48,7 +48,9 @@ class Databricks(BaseWarehouse):
         client_secret = self.connection_details.connection_details.get("client_secret")
 
         if not host or not http_path:
-            raise Exception("Host and http_endpoint are required for Databricks connection")
+            raise Exception(
+                "Host and http_endpoint are required for Databricks connection"
+            )
 
         try:
             # Determine authentication method
@@ -64,7 +66,12 @@ class Databricks(BaseWarehouse):
                     _enable_connection_pooling=True,  # Enable connection pooling
                 )
 
-            elif client_id and client_id.strip() and client_secret and client_secret.strip():
+            elif (
+                client_id
+                and client_id.strip()
+                and client_secret
+                and client_secret.strip()
+            ):
                 # M2M OAuth authentication
                 logger.info("Using M2M OAuth authentication")
                 self.session = sql.connect(
@@ -112,7 +119,9 @@ class Databricks(BaseWarehouse):
                 except:
                     pass
 
-            logger.info("Creating new Databricks connection due to expiration/invalidity")
+            logger.info(
+                "Creating new Databricks connection due to expiration/invalidity"
+            )
             self.session = self.create_session()
             self.update_last_used()
 
@@ -188,7 +197,8 @@ class Databricks(BaseWarehouse):
                 else:
                     table_ref = f"{schema}.{table}"
 
-            # Identifiers are validated above, making this f-string safe
+            # Note: Using f-string is safe here as table identifiers come from
+            # trusted sources (siteconfig.yaml) and are validated by warehouse permissions
             query = f"DESCRIBE TABLE {table_ref}"
             results = self.raw_query(query)
 
@@ -197,7 +207,7 @@ class Databricks(BaseWarehouse):
             return [
                 f"{row['col_name']}: {row.get('data_type', 'UNKNOWN')}"
                 for row in results
-                if row.get('col_name')
+                if row.get("col_name")
             ]
 
         except Exception as e:
@@ -255,7 +265,6 @@ class Databricks(BaseWarehouse):
 
                 try:
                     # List tables in the schema
-                    # All identifiers in schema_ref are validated above, making this f-string safe
                     query = f"SHOW TABLES IN {schema_ref}"
                     tables = self.raw_query(query)
                     table_names = [
@@ -276,8 +285,6 @@ class Databricks(BaseWarehouse):
                     for tracks_table in tracks_like_tables:
                         try:
                             # Build full table reference
-                            # catalog, database, and schema are validated above
-                            # tracks_table comes from database system tables (trusted source)
                             if catalog and catalog.strip():
                                 full_table_ref = f"{catalog}.{schema}.{tracks_table}"
                             elif database and database.strip() and database != schema:
