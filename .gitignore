@@ -5,6 +5,7 @@ memory-bank/state/*
 __pycache__/
 CLAUDE.md
 profiles-mcp.log
+logs/
 tests/sample_conv.md
 .DS_Store
 .idea
