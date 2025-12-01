@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Union, List, Dict, Any
+import re
 import pandas as pd
 
 
@@ -35,6 +36,31 @@ class BaseWarehouse(ABC):
         self.session = None
         self.last_used: datetime = None
         self.connection_details: WarehouseConnectionDetails = None
+
+    @staticmethod
+    def _validate_identifier(identifier: str, identifier_type: str = "identifier") -> None:
+        """
+        Validate SQL identifier to prevent SQL injection.
+
+        Allows: alphanumeric, underscore, dot (for qualified names)
+        Raises exception if identifier contains potentially unsafe characters.
+
+        Args:
+            identifier: The identifier to validate (table name, schema name, etc.)
+            identifier_type: Type of identifier for error message (e.g., "table", "schema")
+
+        Raises:
+            ValueError: If identifier contains unsafe characters
+        """
+        if not identifier or not isinstance(identifier, str):
+            raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
+
+        # Allow alphanumeric, underscore, and dot (for qualified names)
+        if not re.match(r'^[a-zA-Z0-9_.]+$', identifier):
+            raise ValueError(
+                f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
+                f"Only alphanumeric characters, underscores, and dots are allowed."
+            )
 
     @abstractmethod
     def initialize_connection(self, connection_details: dict) -> None:

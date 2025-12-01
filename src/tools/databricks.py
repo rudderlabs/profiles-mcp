@@ -1,5 +1,4 @@
 from typing import Union, List, Dict, Any
-import re
 
 import pandas as pd
 from databricks import sql
@@ -21,31 +20,6 @@ class Databricks(BaseWarehouse):
     def __init__(self):
         super().__init__()
         self.session = None  # Renamed from connection for consistency with base class
-
-    @staticmethod
-    def _validate_identifier(identifier: str, identifier_type: str = "identifier") -> None:
-        """
-        Validate SQL identifier to prevent SQL injection.
-
-        Allows: alphanumeric, underscore, dot (for qualified names)
-        Raises exception if identifier contains potentially unsafe characters.
-
-        Args:
-            identifier: The identifier to validate (table name, schema name, etc.)
-            identifier_type: Type of identifier for error message (e.g., "table", "schema")
-
-        Raises:
-            ValueError: If identifier contains unsafe characters
-        """
-        if not identifier or not isinstance(identifier, str):
-            raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
-
-        # Allow alphanumeric, underscore, and dot (for qualified names)
-        if not re.match(r'^[a-zA-Z0-9_.]+$', identifier):
-            raise ValueError(
-                f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
-                f"Only alphanumeric characters, underscores, and dots are allowed."
-            )
 
     def initialize_connection(self, connection_details: dict) -> None:
         """Initialize a Databricks connection with provided credentials."""

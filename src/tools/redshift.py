@@ -1,6 +1,5 @@
 from typing import Union, List, Dict, Any
 import json
-import re
 
 import pandas as pd
 import redshift_connector
@@ -24,31 +23,6 @@ class Redshift(BaseWarehouse):
     def __init__(self):
         super().__init__()
         self.session = None  # Using session for consistency with base class
-
-    @staticmethod
-    def _validate_identifier(identifier: str, identifier_type: str = "identifier") -> None:
-        """
-        Validate SQL identifier to prevent SQL injection.
-
-        Allows: alphanumeric, underscore, dot (for qualified names)
-        Raises exception if identifier contains potentially unsafe characters.
-
-        Args:
-            identifier: The identifier to validate (table name, schema name, etc.)
-            identifier_type: Type of identifier for error message (e.g., "table", "schema")
-
-        Raises:
-            ValueError: If identifier contains unsafe characters
-        """
-        if not identifier or not isinstance(identifier, str):
-            raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
-
-        # Allow alphanumeric, underscore, and dot (for qualified names)
-        if not re.match(r'^[a-zA-Z0-9_.]+$', identifier):
-            raise ValueError(
-                f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
-                f"Only alphanumeric characters, underscores, and dots are allowed."
-            )
 
     def initialize_connection(self, connection_details: dict) -> None:
         """Initialize a Redshift connection with provided credentials."""
@@ -76,9 +50,10 @@ class Redshift(BaseWarehouse):
         # IAM Authentication parameters
         secrets_arn = self.connection_details.connection_details.get("secrets_arn")
         region = self.connection_details.connection_details.get("region")
-        # Note: cluster_identifier and workgroup_name are available in config but not currently
-        # required for the connection. They may be used in future for additional metadata or
-        # connection options if needed.
+        cluster_identifier = self.connection_details.connection_details.get("cluster_identifier")
+        # Note: User config may have "workgroup_name", but redshift_connector uses "serverless_work_group"
+        workgroup_name = self.connection_details.connection_details.get("workgroup_name")
+        serverless_work_group = workgroup_name if workgroup_name else None
 
         try:
             # Determine authentication method
@@ -93,9 +68,9 @@ class Redshift(BaseWarehouse):
                     raise Exception("Database is required for IAM authentication")
 
                 if not user or not user.strip():
-                    raise Exception("User is required for IAM authentication")
+                    raise Exception("Database user (db_user) is required for IAM authentication")
 
-                # Fetch credentials from Secrets Manager
+                # Fetch IAM credentials from Secrets Manager
                 try:
                     secrets_client = boto3.client('secretsmanager', region_name=region)
                     secret_response = secrets_client.get_secret_value(SecretId=secrets_arn)
@@ -106,33 +81,56 @@ class Redshift(BaseWarehouse):
                     else:
                         raise Exception("Secret does not contain SecretString")
 
-                    # Extract credentials from secret
-                    # Support both cluster_identifier and workgroup_name
-                    retrieved_host = secret_data.get('host')
-                    retrieved_port = secret_data.get('port', 5439)
-                    retrieved_password = secret_data.get('password')
+                    # Extract IAM credentials from secret
+                    access_key_id = secret_data.get('access_key_id')
+                    secret_access_key = secret_data.get('secret_access_key')
+                    session_token = secret_data.get('session_token')  # Optional, for temporary credentials
 
-                    if not retrieved_host or not retrieved_password:
-                        raise Exception("Secret must contain 'host' and 'password' keys")
+                    if not access_key_id or not secret_access_key:
+                        raise Exception("Secret must contain 'access_key_id' and 'secret_access_key' for IAM authentication")
 
-                    # Use retrieved credentials or fall back to provided values
-                    host = retrieved_host if retrieved_host else host
-                    port = retrieved_port if retrieved_port else port
-                    password = retrieved_password
-
-                    logger.info("Successfully retrieved credentials from Secrets Manager")
+                    logger.info("Successfully retrieved IAM credentials from Secrets Manager")
 
                 except Exception as e:
-                    raise Exception(f"Failed to retrieve credentials from Secrets Manager: {str(e)}")
+                    raise Exception(f"Failed to retrieve IAM credentials from Secrets Manager: {str(e)}")
 
-                # Create connection with retrieved credentials
-                self.session = redshift_connector.connect(
-                    host=host,
-                    port=port,
-                    database=database,
-                    user=user,
-                    password=password
-                )
+                # Create connection with IAM authentication
+                # Use cluster_identifier for provisioned clusters or serverless_work_group for serverless
+                connection_params = {
+                    "iam": True,
+                    "database": database,
+                    "db_user": user,
+                    "access_key_id": access_key_id,
+                    "secret_access_key": secret_access_key,
+                    "region": region
+                }
+
+                # Add session_token if present (for temporary credentials)
+                if session_token:
+                    connection_params["session_token"] = session_token
+
+                # For provisioned clusters, use cluster_identifier (auto-discovers endpoint)
+                if cluster_identifier and cluster_identifier.strip():
+                    connection_params["cluster_identifier"] = cluster_identifier
+                    logger.info(f"Using provisioned cluster: {cluster_identifier}")
+                # For serverless, use serverless_work_group parameter
+                elif serverless_work_group and serverless_work_group.strip():
+                    connection_params["serverless_work_group"] = serverless_work_group
+                    # For serverless, host is still required
+                    if not host or not host.strip():
+                        raise Exception("Host is required for Serverless Redshift with IAM authentication")
+                    connection_params["host"] = host
+                    logger.info(f"Using serverless workgroup: {serverless_work_group}")
+                # Fallback to host-based connection
+                elif host and host.strip():
+                    connection_params["host"] = host
+                    if port:
+                        connection_params["port"] = port
+                    logger.info("Using host-based IAM authentication")
+                else:
+                    raise Exception("Either cluster_identifier, serverless_work_group, or host must be provided for IAM authentication")
+
+                self.session = redshift_connector.connect(**connection_params)
 
             elif host and user and password:
                 # Direct username/password authentication
