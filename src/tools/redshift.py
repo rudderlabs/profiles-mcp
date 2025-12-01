@@ -76,8 +76,9 @@ class Redshift(BaseWarehouse):
         # IAM Authentication parameters
         secrets_arn = self.connection_details.connection_details.get("secrets_arn")
         region = self.connection_details.connection_details.get("region")
-        cluster_identifier = self.connection_details.connection_details.get("cluster_identifier")
-        workgroup_name = self.connection_details.connection_details.get("workgroup_name")
+        # Note: cluster_identifier and workgroup_name are available in config but not currently
+        # required for the connection. They may be used in future for additional metadata or
+        # connection options if needed.
 
         try:
             # Determine authentication method
@@ -119,9 +120,7 @@ class Redshift(BaseWarehouse):
                     port = retrieved_port if retrieved_port else port
                     password = retrieved_password
 
-                    # Redact secrets ARN for security (show only last 8 chars)
-                    masked_arn = f"***{secrets_arn[-8:]}" if len(secrets_arn) > 8 else "***"
-                    logger.info(f"Successfully retrieved credentials from Secrets Manager: {masked_arn}")
+                    logger.info("Successfully retrieved credentials from Secrets Manager")
 
                 except Exception as e:
                     raise Exception(f"Failed to retrieve credentials from Secrets Manager: {str(e)}")
@@ -160,10 +159,15 @@ class Redshift(BaseWarehouse):
 
             # Set search_path after connection
             if schema and schema.strip():
+                # Validate schema identifier before using it in SQL
+                self._validate_identifier(schema, "schema")
                 cursor = self.session.cursor()
-                cursor.execute(f"SET search_path TO {schema}")
-                cursor.close()
-                logger.info(f"Set search_path to: {schema}")
+                try:
+                    # Use identifier quoting for safety
+                    cursor.execute(f'SET search_path TO "{schema}"')
+                    logger.info(f"Set search_path to: {schema}")
+                finally:
+                    cursor.close()
 
         except Exception as e:
             raise Exception(f"Failed to create Redshift connection: {str(e)}")
@@ -199,53 +203,55 @@ class Redshift(BaseWarehouse):
             self.update_last_used()
 
     def raw_query(
-        self, query: str, response_type: str = "list"
+        self, query: str, response_type: str = "list", params: tuple = None
     ) -> Union[List[Dict], pd.DataFrame]:
-        """Execute Redshift SQL query and return results."""
+        """Execute Redshift SQL query and return results.
+
+        Args:
+            query: SQL query to execute. Use %s for parameter placeholders.
+            response_type: Format for results - "list" or "pandas"
+            params: Optional tuple of parameters for parameterized query
+        """
+        cursor = None
         try:
             logger.info(f"Executing Redshift query: {query[:100]}...")
             self.ensure_valid_session()
 
             cursor = self.session.cursor()
-            cursor.execute(query)
+            cursor.execute(query, params) if params else cursor.execute(query)
+
+            # Fetch all rows and columns once
+            rows = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description] if cursor.description else []
 
             if response_type == "list":
-                # Fetch all rows
-                rows = cursor.fetchall()
-                columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                cursor.close()
-
                 # Convert to list of dictionaries
                 results = [dict(zip(columns, row)) for row in rows]
                 return results
 
             elif response_type == "pandas":
-                try:
-                    # Fetch all rows and convert to pandas DataFrame
-                    rows = cursor.fetchall()
-                    columns = [desc[0] for desc in cursor.description] if cursor.description else []
-                    cursor.close()
+                # Convert to pandas DataFrame
+                df = pd.DataFrame(rows, columns=columns)
 
-                    df = pd.DataFrame(rows, columns=columns)
-
-                    # Fill NaN values with 'Null' for object columns (consistent across different warehouses)
-                    for col in df.columns:
-                        if df[col].dtype == "object":
-                            df[col] = df[col].fillna("Null")
-                    return df
-                except Exception as e:
-                    logger.error(f"Failed to convert query to pandas: {str(e)}")
-                    # Fall back to list format
-                    cursor.close()
-                    return self.raw_query(query, response_type="list")
+                # Fill NaN values with 'Null' for object columns (consistent across different warehouses)
+                for col in df.columns:
+                    if df[col].dtype == "object":
+                        df[col] = df[col].fillna("Null")
+                return df
             else:
-                cursor.close()
                 raise Exception(f"Invalid response type: {response_type}")
 
         except Exception as e:
             message = f"Redshift query execution failed: {str(e)}"
             logger.error(message)
             raise Exception(message)
+        finally:
+            # Ensure cursor is always closed
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception as e:
+                    logger.warning(f"Error closing cursor: {str(e)}")
 
     def describe_table(self, database: str, schema: str, table: str) -> List[str]:
         """Describe a Redshift table structure."""
@@ -264,17 +270,16 @@ class Redshift(BaseWarehouse):
             # Also supports: database.schema.table for cross-database queries
             # Use pg_table_def system table for metadata
 
-            # Build the query using pg_table_def
-            # Identifiers are validated above, making this f-string safe
+            # Build the query using pg_table_def with parameterized query for safety
             # Note: pg_table_def doesn't have a position column, so we order by column name
-            query = f"""
+            query = """
             SELECT "column" AS name, type
             FROM pg_table_def
-            WHERE schemaname = '{schema}' AND tablename = '{table}'
+            WHERE schemaname = %s AND tablename = %s
             ORDER BY "column"
             """
 
-            results = self.raw_query(query)
+            results = self.raw_query(query, params=(schema, table))
 
             # Format results as "column_name: type"
             if results:
@@ -326,15 +331,14 @@ class Redshift(BaseWarehouse):
 
             for schema in schema_list:
                 try:
-                    # List tables in the schema using pg_table_def
-                    # Schema identifier is validated above, making this f-string safe
-                    query = f"""
+                    # List tables in the schema using pg_table_def with parameterized query
+                    query = """
                     SELECT DISTINCT tablename
                     FROM pg_table_def
-                    WHERE schemaname = '{schema}'
+                    WHERE schemaname = %s
                     ORDER BY tablename
                     """
-                    tables = self.raw_query(query)
+                    tables = self.raw_query(query, params=(schema,))
                     table_names = [
                         table.get("tablename")
                         for table in tables
