@@ -336,7 +336,7 @@ def initialize_warehouse_connection(ctx: Context, connection_name: str) -> dict:
 
 @mcp.tool()
 @track
-def run_query(ctx: Context, query: str) -> pd.DataFrame:
+def run_query(ctx: Context, query: str) -> dict:
     """Run SQL queries on your warehouse to analyze data for your profiles project.
 
     IMPORTANT: Before calling this tool, you MUST call initialize_warehouse_connection() once to initialize the connection.
@@ -369,8 +369,8 @@ def run_query(ctx: Context, query: str) -> pd.DataFrame:
         query: The SQL query to execute (must be a valid SQL query for your warehouse)
 
     Returns:
-        pd.DataFrame: If the query is a SELECT statement, return the results as a pandas DataFrame
-        List[str]: If the query is not a SELECT statement, return the results as a list of strings
+        dict: Dictionary with 'data' (list of records), 'row_count', and 'columns' (for SELECT queries)
+              or 'data' (list of results) and 'row_count' (for non-SELECT queries)
     Example:
         result = run_query("SELECT * FROM my_table LIMIT 10")
     """
@@ -381,9 +381,18 @@ def run_query(ctx: Context, query: str) -> pd.DataFrame:
         )
 
     if query.lower().strip().startswith("select"):
-        return warehouse.raw_query(query, response_type="pandas")
+        df = warehouse.raw_query(query, response_type="pandas")
+        return {
+            "data": df.to_dict(orient="records"),
+            "row_count": len(df),
+            "columns": df.columns.tolist()
+        }
     else:
-        return warehouse.raw_query(query, response_type="list")
+        result = warehouse.raw_query(query, response_type="list")
+        return {
+            "data": result,
+            "row_count": len(result) if isinstance(result, list) else 0
+        }
 
 
 @mcp.tool()

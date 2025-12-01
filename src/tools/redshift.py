@@ -266,11 +266,12 @@ class Redshift(BaseWarehouse):
 
             # Build the query using pg_table_def
             # Identifiers are validated above, making this f-string safe
+            # Note: pg_table_def doesn't have a position column, so we order by column name
             query = f"""
             SELECT "column" AS name, type
             FROM pg_table_def
             WHERE schemaname = '{schema}' AND tablename = '{table}'
-            ORDER BY pos
+            ORDER BY "column"
             """
 
             results = self.raw_query(query)
