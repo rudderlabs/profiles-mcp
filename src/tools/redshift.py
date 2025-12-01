@@ -1,5 +1,6 @@
 from typing import Union, List, Dict, Any
 import json
+import re
 
 import pandas as pd
 import redshift_connector
@@ -23,6 +24,31 @@ class Redshift(BaseWarehouse):
     def __init__(self):
         super().__init__()
         self.session = None  # Using session for consistency with base class
+
+    @staticmethod
+    def _validate_identifier(identifier: str, identifier_type: str = "identifier") -> None:
+        """
+        Validate SQL identifier to prevent SQL injection.
+
+        Allows: alphanumeric, underscore, dot (for qualified names)
+        Raises exception if identifier contains potentially unsafe characters.
+
+        Args:
+            identifier: The identifier to validate (table name, schema name, etc.)
+            identifier_type: Type of identifier for error message (e.g., "table", "schema")
+
+        Raises:
+            ValueError: If identifier contains unsafe characters
+        """
+        if not identifier or not isinstance(identifier, str):
+            raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
+
+        # Allow alphanumeric, underscore, and dot (for qualified names)
+        if not re.match(r'^[a-zA-Z0-9_.]+$', identifier):
+            raise ValueError(
+                f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
+                f"Only alphanumeric characters, underscores, and dots are allowed."
+            )
 
     def initialize_connection(self, connection_details: dict) -> None:
         """Initialize a Redshift connection with provided credentials."""
@@ -93,7 +119,9 @@ class Redshift(BaseWarehouse):
                     port = retrieved_port if retrieved_port else port
                     password = retrieved_password
 
-                    logger.info(f"Successfully retrieved credentials from Secrets Manager: {secrets_arn}")
+                    # Redact secrets ARN for security (show only last 8 chars)
+                    masked_arn = f"***{secrets_arn[-8:]}" if len(secrets_arn) > 8 else "***"
+                    logger.info(f"Successfully retrieved credentials from Secrets Manager: {masked_arn}")
 
                 except Exception as e:
                     raise Exception(f"Failed to retrieve credentials from Secrets Manager: {str(e)}")
@@ -146,7 +174,7 @@ class Redshift(BaseWarehouse):
         """Ensure we have a valid Redshift connection."""
         if self.session is None:
             raise Exception(
-                "Connection is not initialized. Call initialize_warehouse_connection() mcp tool first."
+                "Session is not initialized. Call initialize_warehouse_connection() mcp tool first."
             )
 
         try:
@@ -163,8 +191,8 @@ class Redshift(BaseWarehouse):
             if self.session is not None:
                 try:
                     self.session.close()
-                except:
-                    pass
+                except Exception as close_error:
+                    logger.warning(f"Error closing Redshift session: {str(close_error)}")
 
             logger.info("Creating new Redshift connection due to expiration/invalidity")
             self.session = self.create_session()
@@ -225,16 +253,21 @@ class Redshift(BaseWarehouse):
         try:
             self.ensure_valid_session()
 
+            # Validate identifiers to prevent SQL injection
+            self._validate_identifier(schema, "schema")
+            self._validate_identifier(table, "table")
+            if database:
+                self._validate_identifier(database, "database")
+
             # Redshift supports cross-database queries
             # Default 2-level: schema.table
             # Also supports: database.schema.table for cross-database queries
             # Use pg_table_def system table for metadata
 
             # Build the query using pg_table_def
-            # Note: Using f-string is safe here as table identifiers come from
-            # trusted sources (siteconfig.yaml) and are validated by warehouse permissions
+            # Identifiers are validated above, making this f-string safe
             query = f"""
-            SELECT column AS name, type
+            SELECT "column" AS name, type
             FROM pg_table_def
             WHERE schemaname = '{schema}' AND tablename = '{table}'
             ORDER BY pos
@@ -266,6 +299,12 @@ class Redshift(BaseWarehouse):
         schema_list = [s.strip() for s in schemas.split(",")]
         suggestions = []
 
+        # Validate identifiers to prevent SQL injection
+        if database:
+            self._validate_identifier(database, "database")
+        for schema in schema_list:
+            self._validate_identifier(schema, "schema")
+
         def find_matching_tables(
             schema: str, table_names: List[str], candidates: List[str]
         ) -> List[str]:
@@ -287,6 +326,7 @@ class Redshift(BaseWarehouse):
             for schema in schema_list:
                 try:
                     # List tables in the schema using pg_table_def
+                    # Schema identifier is validated above, making this f-string safe
                     query = f"""
                     SELECT DISTINCT tablename
                     FROM pg_table_def
@@ -312,6 +352,8 @@ class Redshift(BaseWarehouse):
                     for tracks_table in tracks_like_tables:
                         try:
                             # Build full table reference
+                            # database and schema are validated above
+                            # tracks_table comes from database system tables (trusted source)
                             if database and database.strip() and database != schema:
                                 full_table_ref = f"{database}.{schema}.{tracks_table}"
                             else:

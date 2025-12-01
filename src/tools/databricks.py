@@ -1,4 +1,5 @@
 from typing import Union, List, Dict, Any
+import re
 
 import pandas as pd
 from databricks import sql
@@ -20,6 +21,31 @@ class Databricks(BaseWarehouse):
     def __init__(self):
         super().__init__()
         self.session = None  # Renamed from connection for consistency with base class
+
+    @staticmethod
+    def _validate_identifier(identifier: str, identifier_type: str = "identifier") -> None:
+        """
+        Validate SQL identifier to prevent SQL injection.
+
+        Allows: alphanumeric, underscore, dot (for qualified names)
+        Raises exception if identifier contains potentially unsafe characters.
+
+        Args:
+            identifier: The identifier to validate (table name, schema name, etc.)
+            identifier_type: Type of identifier for error message (e.g., "table", "schema")
+
+        Raises:
+            ValueError: If identifier contains unsafe characters
+        """
+        if not identifier or not isinstance(identifier, str):
+            raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
+
+        # Allow alphanumeric, underscore, and dot (for qualified names)
+        if not re.match(r'^[a-zA-Z0-9_.]+$', identifier):
+            raise ValueError(
+                f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
+                f"Only alphanumeric characters, underscores, and dots are allowed."
+            )
 
     def initialize_connection(self, connection_details: dict) -> None:
         """Initialize a Databricks connection with provided credentials."""
@@ -168,11 +194,18 @@ class Databricks(BaseWarehouse):
         try:
             self.ensure_valid_session()
 
+            # Validate identifiers to prevent SQL injection
+            self._validate_identifier(schema, "schema")
+            self._validate_identifier(table, "table")
+            if database:
+                self._validate_identifier(database, "database")
+
             # Check if Unity Catalog is being used (3-level namespace)
             catalog = self.connection_details.connection_details.get("catalog")
 
             if catalog and catalog.strip():
                 # Unity Catalog: catalog.schema.table
+                self._validate_identifier(catalog, "catalog")
                 table_ref = f"{catalog}.{schema}.{table}"
             else:
                 # Legacy: database is used as catalog if provided, otherwise just schema.table
@@ -181,8 +214,7 @@ class Databricks(BaseWarehouse):
                 else:
                     table_ref = f"{schema}.{table}"
 
-            # Note: Using f-string is safe here as table identifiers come from
-            # trusted sources (siteconfig.yaml) and are validated by warehouse permissions
+            # Identifiers are validated above, making this f-string safe
             query = f"DESCRIBE TABLE {table_ref}"
             results = self.raw_query(query)
 
@@ -205,8 +237,16 @@ class Databricks(BaseWarehouse):
         schema_list = [s.strip() for s in schemas.split(",")]
         suggestions = []
 
+        # Validate identifiers to prevent SQL injection
+        if database:
+            self._validate_identifier(database, "database")
+        for schema in schema_list:
+            self._validate_identifier(schema, "schema")
+
         # Check if Unity Catalog is being used
         catalog = self.connection_details.connection_details.get("catalog")
+        if catalog and catalog.strip():
+            self._validate_identifier(catalog, "catalog")
 
         def find_matching_tables(
             schema: str, table_names: List[str], candidates: List[str]
@@ -241,6 +281,7 @@ class Databricks(BaseWarehouse):
 
                 try:
                     # List tables in the schema
+                    # All identifiers in schema_ref are validated above, making this f-string safe
                     query = f"SHOW TABLES IN {schema_ref}"
                     tables = self.raw_query(query)
                     table_names = [
@@ -261,6 +302,8 @@ class Databricks(BaseWarehouse):
                     for tracks_table in tracks_like_tables:
                         try:
                             # Build full table reference
+                            # catalog, database, and schema are validated above
+                            # tracks_table comes from database system tables (trusted source)
                             if catalog and catalog.strip():
                                 full_table_ref = f"{catalog}.{schema}.{tracks_table}"
                             elif database and database.strip() and database != schema:
