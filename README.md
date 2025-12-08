@@ -175,7 +175,6 @@ The MCP Server provides a comprehensive toolkit that enables AI assistants to bu
 
 We're continuously improving the Profiles MCP Server. Upcoming features include:
 - Enhanced analysis tools for profiles output tables
-- Additional warehouse support (and others)
 - Advanced debugging and validation capabilities
 
 ## Advanced Configuration

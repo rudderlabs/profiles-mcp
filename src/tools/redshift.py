@@ -81,8 +81,9 @@ class Redshift(BaseWarehouse):
             "region": region,
         }
 
-        if credentials["session_token"]:
-            connection_params["session_token"] = credentials["session_token"]
+        session_token = credentials.get("session_token")
+        if session_token and session_token.strip():
+            connection_params["session_token"] = session_token
 
         # Determine endpoint: cluster_identifier, serverless_work_group, or host
         if cluster_identifier and cluster_identifier.strip():
@@ -170,17 +171,24 @@ class Redshift(BaseWarehouse):
         )
 
     def _set_search_path(self, schema: str):
-        """Set the search_path for the session."""
+        """
+        Set the search_path for the session.
+
+        Note: This method is called immediately after session creation in create_session(),
+        so the session is guaranteed to be valid at this point.
+        """
         if not schema or not schema.strip():
             return
 
         self._validate_identifier(schema, "schema")
-        cursor = self.session.cursor()
+        cursor = None
         try:
+            cursor = self.session.cursor()
             cursor.execute(f'SET search_path TO "{schema}"')
             logger.info(f"Set search_path to: {schema}")
         finally:
-            cursor.close()
+            if cursor is not None:
+                cursor.close()
 
     def create_session(self) -> Any:
         """Create a new Redshift connection with proper authentication handling."""
@@ -233,7 +241,7 @@ class Redshift(BaseWarehouse):
         """Ensure we have a valid Redshift connection."""
         if self.session is None:
             raise Exception(
-                "Session is not initialized. Call initialize_warehouse_connection() mcp tool first."
+                "Session is not initialized. Call initialize_warehouse_connection mcp tool first."
             )
 
         try:
@@ -442,8 +450,10 @@ class Redshift(BaseWarehouse):
                         database, schema, table_names, event_names
                     )
                 )
-            except Exception:
-                logger.warning(f"Failed to query events from {schema}.{tracks_table}")
+            except Exception as e:
+                logger.warning(
+                    f"Failed to query events from {schema}.{tracks_table}: {str(e)}"
+                )
 
         return suggestions
 

@@ -42,10 +42,20 @@ class BaseWarehouse(ABC):
         identifier: str, identifier_type: str = "identifier"
     ) -> None:
         """
-        Validate SQL identifier to prevent SQL injection.
+        Validate SQL identifier to prevent SQL injection across all supported warehouses.
 
-        Allows: alphanumeric, underscore, dot (for qualified names)
-        Raises exception if identifier contains potentially unsafe characters.
+        This validation works for Snowflake, Redshift, and Databricks identifiers.
+        Allows: alphanumeric, underscore, dot (for qualified names), and dollar sign.
+
+        Note: This validation is used for identifiers that may be used in f-string
+        SQL queries. For parameterized queries, the database driver handles escaping.
+
+        Supported characters:
+        - Letters: a-z, A-Z
+        - Numbers: 0-9
+        - Underscore: _ (all warehouses)
+        - Dot: . (for qualified names like database.schema.table)
+        - Dollar sign: $ (Snowflake and Redshift)
 
         Args:
             identifier: The identifier to validate (table name, schema name, etc.)
@@ -57,11 +67,12 @@ class BaseWarehouse(ABC):
         if not identifier or not isinstance(identifier, str):
             raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
 
-        # Allow alphanumeric, underscore, and dot (for qualified names)
-        if not re.match(r"^[a-zA-Z0-9_.]+$", identifier):
+        # Allow alphanumeric, underscore, dot, and dollar sign
+        # This pattern works across Snowflake, Redshift, and Databricks
+        if not re.match(r"^[a-zA-Z0-9_.$]+$", identifier):
             raise ValueError(
                 f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
-                f"Only alphanumeric characters, underscores, and dots are allowed."
+                f"Only alphanumeric characters, underscores, dots, and dollar signs are allowed."
             )
 
     @abstractmethod
