@@ -3,6 +3,7 @@ from typing import Optional, Type
 from logger import setup_logger
 from tools.bigquery import BigQuery
 from tools.databricks import Databricks
+from tools.redshift import Redshift
 from tools.snowflake import Snowflake
 from tools.warehouse_base import BaseWarehouse
 
@@ -21,6 +22,7 @@ class WarehouseFactory:
         "snowflake": Snowflake,
         "bigquery": BigQuery,
         "databricks": Databricks,
+        "redshift": Redshift,
     }
 
     @classmethod

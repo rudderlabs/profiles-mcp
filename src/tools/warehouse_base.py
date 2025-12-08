@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Union, List, Dict, Any
+import re
 import pandas as pd
 
 
@@ -35,6 +36,44 @@ class BaseWarehouse(ABC):
         self.session = None
         self.last_used: datetime = None
         self.connection_details: WarehouseConnectionDetails = None
+
+    @staticmethod
+    def _validate_identifier(
+        identifier: str, identifier_type: str = "identifier"
+    ) -> None:
+        """
+        Validate SQL identifier to prevent SQL injection across all supported warehouses.
+
+        This validation works for Snowflake, Redshift, and Databricks identifiers.
+        Allows: alphanumeric, underscore, dot (for qualified names), and dollar sign.
+
+        Note: This validation is used for identifiers that may be used in f-string
+        SQL queries. For parameterized queries, the database driver handles escaping.
+
+        Supported characters:
+        - Letters: a-z, A-Z
+        - Numbers: 0-9
+        - Underscore: _ (all warehouses)
+        - Dot: . (for qualified names like database.schema.table)
+        - Dollar sign: $ (Snowflake and Redshift)
+
+        Args:
+            identifier: The identifier to validate (table name, schema name, etc.)
+            identifier_type: Type of identifier for error message (e.g., "table", "schema")
+
+        Raises:
+            ValueError: If identifier contains unsafe characters
+        """
+        if not identifier or not isinstance(identifier, str):
+            raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
+
+        # Allow alphanumeric, underscore, dot, and dollar sign
+        # This pattern works across Snowflake, Redshift, and Databricks
+        if not re.match(r"^[a-zA-Z0-9_.$]+$", identifier):
+            raise ValueError(
+                f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
+                f"Only alphanumeric characters, underscores, dots, and dollar signs are allowed."
+            )
 
     @abstractmethod
     def initialize_connection(self, connection_details: dict) -> None:

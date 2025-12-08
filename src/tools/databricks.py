@@ -48,7 +48,9 @@ class Databricks(BaseWarehouse):
         client_secret = self.connection_details.connection_details.get("client_secret")
 
         if not host or not http_path:
-            raise Exception("Host and http_endpoint are required for Databricks connection")
+            raise Exception(
+                "Host and http_endpoint are required for Databricks connection"
+            )
 
         try:
             # Determine authentication method
@@ -64,7 +66,12 @@ class Databricks(BaseWarehouse):
                     _enable_connection_pooling=True,  # Enable connection pooling
                 )
 
-            elif client_id and client_id.strip() and client_secret and client_secret.strip():
+            elif (
+                client_id
+                and client_id.strip()
+                and client_secret
+                and client_secret.strip()
+            ):
                 # M2M OAuth authentication
                 logger.info("Using M2M OAuth authentication")
                 self.session = sql.connect(
@@ -112,7 +119,9 @@ class Databricks(BaseWarehouse):
                 except:
                     pass
 
-            logger.info("Creating new Databricks connection due to expiration/invalidity")
+            logger.info(
+                "Creating new Databricks connection due to expiration/invalidity"
+            )
             self.session = self.create_session()
             self.update_last_used()
 
@@ -168,11 +177,18 @@ class Databricks(BaseWarehouse):
         try:
             self.ensure_valid_session()
 
+            # Validate identifiers to prevent SQL injection
+            self._validate_identifier(schema, "schema")
+            self._validate_identifier(table, "table")
+            if database:
+                self._validate_identifier(database, "database")
+
             # Check if Unity Catalog is being used (3-level namespace)
             catalog = self.connection_details.connection_details.get("catalog")
 
             if catalog and catalog.strip():
                 # Unity Catalog: catalog.schema.table
+                self._validate_identifier(catalog, "catalog")
                 table_ref = f"{catalog}.{schema}.{table}"
             else:
                 # Legacy: database is used as catalog if provided, otherwise just schema.table
@@ -191,7 +207,7 @@ class Databricks(BaseWarehouse):
             return [
                 f"{row['col_name']}: {row.get('data_type', 'UNKNOWN')}"
                 for row in results
-                if row.get('col_name')
+                if row.get("col_name")
             ]
 
         except Exception as e:
@@ -205,8 +221,16 @@ class Databricks(BaseWarehouse):
         schema_list = [s.strip() for s in schemas.split(",")]
         suggestions = []
 
+        # Validate identifiers to prevent SQL injection
+        if database:
+            self._validate_identifier(database, "database")
+        for schema in schema_list:
+            self._validate_identifier(schema, "schema")
+
         # Check if Unity Catalog is being used
         catalog = self.connection_details.connection_details.get("catalog")
+        if catalog and catalog.strip():
+            self._validate_identifier(catalog, "catalog")
 
         def find_matching_tables(
             schema: str, table_names: List[str], candidates: List[str]
