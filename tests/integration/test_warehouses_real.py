@@ -5,18 +5,9 @@ from tools.warehouse_factory import WarehouseManager
 from tools.profiles import ProfilesTools
 
 
-# Helper to check if a specific connection is available in the injected siteconfig
-def has_connection(conn_name):
-    from constants import PB_SITE_CONFIG_PATH
-
-    if not PB_SITE_CONFIG_PATH or not os.path.exists(PB_SITE_CONFIG_PATH):
-        return False
-    try:
-        with open(PB_SITE_CONFIG_PATH, "r") as f:
-            config = yaml.safe_load(f)
-            return conn_name in config.get("connections", {})
-    except:
-        return False
+# Helper to check if a specific connection secret is present in env
+def has_secret(env_var):
+    return os.environ.get(env_var) is not None
 
 
 @pytest.fixture
@@ -31,7 +22,7 @@ def profiles_tool():
 
 # --- Snowflake Integration ---
 @pytest.mark.skipif(
-    not has_connection("snowflake_conn"), reason="snowflake_conn not in siteconfig"
+    not has_secret("SNOWFLAKE_CONFIG"), reason="SNOWFLAKE_CONFIG env var not set"
 )
 class TestSnowflakeIntegration:
     def test_connection_and_simple_query(self, warehouse_manager, profiles_tool):
@@ -87,7 +78,7 @@ class TestSnowflakeIntegration:
 
 # --- BigQuery Integration ---
 @pytest.mark.skipif(
-    not has_connection("bigquery_conn"), reason="bigquery_conn not in siteconfig"
+    not has_secret("BIGQUERY_CONFIG"), reason="BIGQUERY_CONFIG env var not set"
 )
 class TestBigQueryIntegration:
     def test_connection_and_simple_query(self, warehouse_manager, profiles_tool):
@@ -117,7 +108,7 @@ class TestBigQueryIntegration:
 
 # --- Databricks Integration ---
 @pytest.mark.skipif(
-    not has_connection("databricks_conn"), reason="databricks_conn not in siteconfig"
+    not has_secret("DATABRICKS_CONFIG"), reason="DATABRICKS_CONFIG env var not set"
 )
 class TestDatabricksIntegration:
     def test_connection_and_simple_query(self, warehouse_manager, profiles_tool):
@@ -150,7 +141,7 @@ class TestDatabricksIntegration:
 
 # --- Redshift Integration ---
 @pytest.mark.skipif(
-    not has_connection("redshift_conn"), reason="redshift_conn not in siteconfig"
+    not has_secret("REDSHIFT_CONFIG"), reason="REDSHIFT_CONFIG env var not set"
 )
 class TestRedshiftIntegration:
     def test_connection_and_simple_query(self, warehouse_manager, profiles_tool):
