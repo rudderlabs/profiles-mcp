@@ -69,8 +69,11 @@ def patch_site_config(warehouse_config_setup):
     If not, it will point to None (or we can just let it identify as missing).
     """
     if warehouse_config_setup:
-        # Patch the constant in the constants module
-        with patch("constants.PB_SITE_CONFIG_PATH", warehouse_config_setup):
+        # Patch the constant in the constants module AND where it is imported in tools.profiles
+        with (
+            patch("constants.PB_SITE_CONFIG_PATH", warehouse_config_setup),
+            patch("tools.profiles.PB_SITE_CONFIG_PATH", warehouse_config_setup),
+        ):
             yield
     else:
         yield
