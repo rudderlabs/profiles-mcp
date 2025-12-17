@@ -4,7 +4,7 @@
 
 ### What is Profiles MCP?
 
-Profiles MCP is a Model Context Protocol (MCP) server designed to facilitate building and managing RudderStack Profiles projects through AI-powered tools and direct data warehouse integration (Snowflake and BigQuery). It serves as an intelligent assistant that guides users through the complete lifecycle of customer data unification projects.
+Profiles MCP is a Model Context Protocol (MCP) server designed to facilitate building and managing RudderStack Profiles projects through AI-powered tools and direct data warehouse integration (Snowflake, BigQuery, Databricks, and Redshift). It serves as an intelligent assistant that guides users through the complete lifecycle of customer data unification projects.
 
 ### Key Capabilities
 
@@ -12,7 +12,7 @@ Profiles MCP is a Model Context Protocol (MCP) server designed to facilitate bui
 - **Data Discovery**: Automated table and connection discovery with user confirmation
 - **Configuration Generation**: Smart YAML generation with validation and user approval
 - **Documentation Integration**: RAG-powered documentation and FAQ search
-- **Direct Warehouse Access**: Real-time SQL execution and data analysis (Snowflake & BigQuery)
+- **Direct Warehouse Access**: Real-time SQL execution and data analysis (Snowflake, BigQuery, Databricks, & Redshift)
 - **Quality Assurance**: Multi-layer validation to prevent AI hallucination
 
 ### High-Level Architecture
@@ -63,6 +63,8 @@ profiles-mcp/
 │   │   ├── warehouse_factory.py # Warehouse factory and manager
 │   │   ├── snowflake.py        # Snowflake integration
 │   │   ├── bigquery.py         # BigQuery integration
+│   │   ├── databricks.py       # Databricks integration
+│   │   ├── redshift.py         # Redshift integration
 │   │   └── profiles.py         # Project management tools
 │   ├── utils/                   # Shared utilities
 │   │   ├── analytics.py        # Usage tracking
@@ -156,7 +158,7 @@ flowchart TB
 | **About** | Documentation provider | Topic-specific guides, examples, best practices |
 | **FAQ** | Question answering | Vector-based FAQ search and retrieval |
 | **Docs** | Content search | RAG-powered documentation search |
-| **WarehouseManager** | Multi-warehouse management | Connection management, query execution, table discovery (Snowflake & BigQuery) |
+| **WarehouseManager** | Multi-warehouse management | Connection management, query execution, table discovery (Snowflake, BigQuery, Databricks, Redshift) |
 | **Profiles** | Project management | Workflow orchestration, project setup, validation |
 
 ### Data Flow
@@ -185,7 +187,7 @@ flowchart LR
 ### Integration Points
 
 #### Data Warehouse Integration
-- **Multi-Warehouse Support**: Factory pattern supporting Snowflake and BigQuery with unified BaseWarehouse interface
+- **Multi-Warehouse Support**: Factory pattern supporting Snowflake, BigQuery, Databricks, and Redshift with unified BaseWarehouse interface
 - **WarehouseManager**: Centralized management of multiple warehouse connections with session pooling
 - **WarehouseFactory**: Dynamic warehouse instance creation based on connection type
 - **Session Management**: Persistent connections with credential handling and automatic session validation
@@ -534,7 +536,9 @@ The system uses a sophisticated factory pattern to support multiple data warehou
 # Warehouse inheritance hierarchy
 BaseWarehouse (Abstract)
 ├── Snowflake (Implementation)
-└── BigQuery (Implementation)
+├── BigQuery (Implementation)
+├── Databricks (Implementation)
+└── Redshift (Implementation)
 
 # Factory and Management
 WarehouseFactory
@@ -561,7 +565,7 @@ sequenceDiagram
 
     Tool->>Manager: initialize_warehouse(name, details)
     Manager->>Factory: create_warehouse(type)
-    Factory->>Warehouse: new Snowflake() / new BigQuery()
+    Factory->>Warehouse: new Snowflake() / BigQuery() / Databricks() / Redshift()
     Manager->>Warehouse: initialize_connection(details)
     Warehouse->>Session: create_session()
     Session-->>Warehouse: session object
@@ -576,6 +580,8 @@ sequenceDiagram
 |-----------|--------|---------------|------------------|
 | **Snowflake** | ✅ Fully Supported | Username/Password, Key Pair, SSO | Role-based access, automatic session refresh |
 | **BigQuery** | ✅ Fully Supported | Service Account JSON, Application Default Credentials | Project/Dataset scoping, optimized queries |
+| **Databricks** | ✅ Fully Supported | Personal Access Token, M2M OAuth | Unity Catalog support, compute management |
+| **Redshift** | ✅ Fully Supported | Username/Password, IAM (Secrets Manager) | Serverless & Provisioned support, cross-database queries |
 
 ### Connection Management
 
