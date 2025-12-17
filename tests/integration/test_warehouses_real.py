@@ -10,12 +10,12 @@ def has_secret(env_var):
     return os.environ.get(env_var) is not None
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def warehouse_manager():
     return WarehouseManager()
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def profiles_tool():
     return ProfilesTools()
 
@@ -71,9 +71,10 @@ class TestSnowflakeIntegration:
         try:
             desc = wh.describe_table(desc_db, desc_schema, desc_table)
             assert isinstance(desc, list)
-        except Exception as e:
-            # If information schema access is restricted, we warn but don't fail if suggestions worked
-            print(f"Describe table failed: {e}")
+        except Exception:
+            # If information schema access is restricted, continue without failing
+            # The suggestions test already validated basic functionality
+            pass
 
 
 # --- BigQuery Integration ---

@@ -2,6 +2,7 @@ import os
 import pytest
 import yaml
 import tempfile
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -58,9 +59,9 @@ def warehouse_config_setup():
                         "outputs": {"dev": parsed_config},
                     }
             except yaml.YAMLError as e:
-                print(f"Warning: Failed to parse secret for {env_var}: {e}")
+                warnings.warn(f"Failed to parse secret for {env_var}: {e}")
             except (KeyError, IndexError) as e:
-                print(f"Warning: Invalid structure in secret for {env_var}: {e}")
+                warnings.warn(f"Invalid structure in secret for {env_var}: {e}")
 
     # If we are in an integration test environment (implied by presence of secrets),
     # we create a temp siteconfig.yaml
