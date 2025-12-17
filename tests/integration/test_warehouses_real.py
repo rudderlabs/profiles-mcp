@@ -10,12 +10,12 @@ def has_secret(env_var):
     return os.environ.get(env_var) is not None
 
 
-@pytest.fixture(scope="class")
+@pytest.fixture
 def warehouse_manager():
     return WarehouseManager()
 
 
-@pytest.fixture(scope="class")
+@pytest.fixture
 def profiles_tool():
     return ProfilesTools()
 
