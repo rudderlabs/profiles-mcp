@@ -31,16 +31,36 @@ def warehouse_config_setup():
             found_secrets = True
             try:
                 # Parse the YAML string from secret
-                conn_config = yaml.safe_load(config_str)
+                parsed_config = yaml.safe_load(config_str)
 
-                # Construct the full siteconfig structure for this connection
-                # We default target to 'dev'
-                connections[conn_name] = {
-                    "target": "dev",
-                    "outputs": {"dev": conn_config},
-                }
+                # Handle two possible formats:
+                # 1. Full siteconfig format: connections → conn_name → target/outputs
+                # 2. Simple format: just the innermost config with type, host, etc.
+
+                if "connections" in parsed_config:
+                    # Full format: extract the first connection
+                    first_conn_name = list(parsed_config["connections"].keys())[0]
+                    existing_conn = parsed_config["connections"][first_conn_name]
+
+                    # Use the existing target/outputs structure
+                    target = existing_conn.get("target", "dev")
+                    output_config = existing_conn["outputs"][target]
+
+                    # Re-map to our test connection name
+                    connections[conn_name] = {
+                        "target": target,
+                        "outputs": {target: output_config},
+                    }
+                else:
+                    # Simple format: wrap it with default target
+                    connections[conn_name] = {
+                        "target": "dev",
+                        "outputs": {"dev": parsed_config},
+                    }
             except yaml.YAMLError as e:
                 print(f"Warning: Failed to parse secret for {env_var}: {e}")
+            except (KeyError, IndexError) as e:
+                print(f"Warning: Invalid structure in secret for {env_var}: {e}")
 
     # If we are in an integration test environment (implied by presence of secrets),
     # we create a temp siteconfig.yaml
