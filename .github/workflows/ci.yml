@@ -28,7 +28,7 @@ jobs:
       - name: Run Unit Tests
         run: |
           export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-          pytest tests/unit
+          uv run pytest
 
   integration-tests:
     name: Integration Tests (${{ matrix.warehouse }})
