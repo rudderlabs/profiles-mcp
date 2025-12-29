@@ -1454,7 +1454,7 @@ For more information, refer to the RudderStack Profiles documentation.
 
         # Run pb show model_details command to get the models JSON
         try:
-            cmd = [f"/Users/sp/rudderstack/codes/wht/wht show model_details -p {project_path} --migrate_on_load"]
+            cmd = [f"pb show model_details -p {project_path} --migrate_on_load"]
             result = subprocess.run(
                 cmd,
                 shell=True,
