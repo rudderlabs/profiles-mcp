@@ -646,7 +646,7 @@ class TestPropensityValidator:
         assert result["validation_status"] == "PASSED"
 
     @patch('src.validators.propensity_validator.ProfilesUtils')
-    def test_validate_fails_with_an_valid_model(
+    def test_validate_fails_with_an_invalid_model(
         self,
         mock_profiles_utils,
         mock_warehouse_client,

@@ -382,7 +382,7 @@ class PropensityValidator:
                         "type": "NON_EVENT_STREAM_INPUT",
                         "feature": entity_var_model.name,
                         "message": f"Input table {leaf_path} used by feature '{entity_var_model.name}' must have is_event_stream: true",
-                        "remediation": f"Add occurred_at_col in app_defaults of the input table or model_spec of sql_template trype model '{prop_model_obj.name}'"
+                        "remediation": f"Add occurred_at_col in app_defaults of the input table or model_spec of sql_template type model '{prop_model_obj.name}'"
                     })
                 
                 # Call _validate_historic_data with is_fallback=False
