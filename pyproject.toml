@@ -17,10 +17,19 @@ dependencies = [
     "qdrant-client>=1.13.3",
     "rudder-sdk-python>=2.1.4",
     "profiles-mlcorelib>=0.8.1",
+    "profiles-rudderstack>=0.24.0",
     "kaleido==0.2.1",
     "requests>=2.31.0",
     "google-cloud-bigquery>=3.27.0",
     "databricks-sql-connector>=2.0.0",
     "redshift-connector>=2.1.0",
     "boto3>=1.26.0",
+    "pytest>=8.0.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "."
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
