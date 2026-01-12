@@ -109,7 +109,7 @@ def track(func):
     return wrapper
 
 
-@mcp.tool()
+#@mcp.tool()
 @track
 def about_profiles(ctx: Context, topic: str = "profiles") -> str:
     """
@@ -658,7 +658,7 @@ def evaluate_eligible_user_filters(
     )
 
 
-@mcp.tool()
+#@mcp.tool()
 @track
 def profiles_workflow_guide(
     ctx: Context,
