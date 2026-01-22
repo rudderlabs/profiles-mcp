@@ -1,8 +1,11 @@
-import requests
+import base64
 import os
 from typing import Dict, List
+
+import requests
+
+from constants import RETRIEVAL_API_URL, IS_CLOUD_BASED
 from logger import setup_logger
-from constants import RETRIEVAL_API_URL
 
 logger = setup_logger(__name__)
 
@@ -16,16 +19,34 @@ class RAGSearchAPIClient:
         """
         Initialize the RAG Search API client
         """
-        self.token = os.getenv('RUDDERSTACK_PAT')
         self.base_url = RETRIEVAL_API_URL
+        if IS_CLOUD_BASED:
+            self.username = os.getenv("RUDDERSTACK_ADMIN_USERNAME")
+            self.password = os.getenv("RUDDERSTACK_ADMIN_PASSWORD")
+        else:
+            self.token = os.getenv("RUDDERSTACK_PAT")
 
     def _get_headers(self) -> Dict[str, str]:
         """Get standard headers for API requests"""
-        return {
-            "Authorization": f"Bearer {self.token}",
+        headers = {
             "Content-Type": "application/json",
-            "User-Agent": "rudder-profiles-mcp/0.1"
+            "User-Agent": "rudder-profiles-mcp/0.1",
         }
+
+        if IS_CLOUD_BASED:
+            if self.username and self.password:
+                credentials = f"{self.username}:{self.password}"
+                encoded_credentials = base64.b64encode(credentials.encode()).decode()
+                headers["Authorization"] = f"Basic {encoded_credentials}"
+            else:
+                logger.warning("RudderStack Admin credentials not set")
+        else:
+            if self.token:
+                headers["Authorization"] = f"Bearer {self.token}"
+            else:
+                logger.warning("RudderStack PAT not set")
+
+        return headers
 
     def search(self, query: str) -> List[str]:
         """
