@@ -21,16 +21,28 @@ class RAGSearchAPIClient:
         """
         self.base_url = RETRIEVAL_API_URL
         if IS_CLOUD_BASED:
-            self.username = os.getenv("RUDDERSTACK_ADMIN_USERNAME")
-            self.password = os.getenv("RUDDERSTACK_ADMIN_PASSWORD")
+            username = os.getenv("RUDDERSTACK_ADMIN_USERNAME")
+            password = os.getenv("RUDDERSTACK_ADMIN_PASSWORD")
+            if not username or not password:
+                raise ValueError(
+                    "RUDDERSTACK_ADMIN_USERNAME and RUDDERSTACK_ADMIN_PASSWORD "
+                    "must be set when IS_CLOUD_BASED=true"
+                )
+            self.username = username
+            self.password = password
         else:
-            self.token = os.getenv("RUDDERSTACK_PAT")
+            token = os.getenv("RUDDERSTACK_PAT")
+            if not token:
+                raise ValueError(
+                    "RUDDERSTACK_PAT must be set when IS_CLOUD_BASED=false"
+                )
+            self.token = token
 
     def _get_headers(self) -> Dict[str, str]:
         """Get standard headers for API requests"""
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "rudder-profiles-mcp/0.1",
+            "User-Agent": "rudder-profiles-mcp",
         }
 
         if IS_CLOUD_BASED:
@@ -67,6 +79,9 @@ class RAGSearchAPIClient:
             response.raise_for_status()
 
             return [r["text"] for r in response.json()["results"]]
-        except Exception as e:
+        except requests.RequestException as e:
             logger.error(f"Error searching profiles docs with query '{query}': {e}")
-            raise e
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during search: {e}")
+            raise
