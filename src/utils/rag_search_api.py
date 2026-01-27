@@ -21,11 +21,11 @@ class RAGSearchAPIClient:
         """
         self.base_url = RETRIEVAL_API_URL
         if IS_CLOUD_BASED:
-            username = os.getenv("RUDDERSTACK_ADMIN_USERNAME")
-            password = os.getenv("RUDDERSTACK_ADMIN_PASSWORD")
+            username = os.getenv("RAG_ADMIN_USERNAME")
+            password = os.getenv("RAG_ADMIN_PASSWORD")
             if not username or not password:
                 raise ValueError(
-                    "RUDDERSTACK_ADMIN_USERNAME and RUDDERSTACK_ADMIN_PASSWORD "
+                    "RAG_ADMIN_USERNAME and RAG_ADMIN_PASSWORD "
                     "must be set when IS_CLOUD_BASED=true"
                 )
             self.username = username
