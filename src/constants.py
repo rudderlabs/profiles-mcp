@@ -6,10 +6,11 @@ ANALYTICS_DATA_PLANE_URL = "https://rudderstacqiqh.dataplane.rudderstack.com"
 
 # External Services
 IS_CLOUD_BASED = os.getenv("IS_CLOUD_BASED", "false").lower() == "true"
-if IS_CLOUD_BASED:
-    RETRIEVAL_API_URL = "https://profiles-mcp-service-admin.rudderstack.com"
-else:
-    RETRIEVAL_API_URL = "https://profiles-mcp-service.rudderstack.com"
+RETRIEVAL_API_URL = os.getenv("RETRIEVAL_API_URL") or (
+    "https://profiles-mcp-service-admin.rudderstack.com"
+    if IS_CLOUD_BASED
+    else "https://profiles-mcp-service.rudderstack.com"
+)
 
 PB_CONFIG_DIR = Path.home() / ".pb"
 PB_PREFERENCES_FILE = "preferences.yaml"
