@@ -23,7 +23,7 @@ class RudderstackAPIClient:
         return {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
-            "User-Agent": "rudder-profiles-mcp/0.1"
+            "User-Agent": "rudder-profiles-mcp"
         }
 
     def get_resource(self, path: str, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
