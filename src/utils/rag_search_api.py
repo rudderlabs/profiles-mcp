@@ -79,6 +79,27 @@ class RAGSearchAPIClient:
             response.raise_for_status()
 
             return [r["text"] for r in response.json()["results"]]
+        except requests.exceptions.ConnectionError as e:
+            error_msg = str(e).lower()
+            if any(
+                phrase in error_msg
+                for phrase in [
+                    "name or service not known",
+                    "nodename nor servname provided",
+                    "getaddrinfo failed",
+                    "failed to resolve",
+                    "no address associated",
+                ]
+            ):
+                logger.error(
+                    f"Failed to connect to RAG search API at '{self.base_url}': {e}. "
+                    f"This may indicate that IS_CLOUD_BASED is incorrectly configured. "
+                    f"Current IS_CLOUD_BASED={IS_CLOUD_BASED}. "
+                    f"Try setting IS_CLOUD_BASED={'false' if IS_CLOUD_BASED else 'true'}."
+                )
+            else:
+                logger.error(f"Connection error to RAG search API: {e}")
+            raise
         except requests.RequestException as e:
             logger.error(f"Error searching profiles docs with query '{query}': {e}")
             raise
