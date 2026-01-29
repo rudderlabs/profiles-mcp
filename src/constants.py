@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env file - safe to call multiple times (idempotent)
+
 ANALYTICS_WRITE_KEY = "2xL75MYRl00bI88EqinCq5T7RfO"
 ANALYTICS_DATA_PLANE_URL = "https://rudderstacqiqh.dataplane.rudderstack.com"
 
