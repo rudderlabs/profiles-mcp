@@ -4,9 +4,4 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 source "$PROJECT_ROOT/.venv/bin/activate"
-
-# Bootstrap environment variables from process to .env
-# This uses the python interpreter from the venv to ensure compatibility
-python3 "$SCRIPT_DIR/bootstrap_env.py"
-
 uv run --with mcp[cli] mcp run "$PROJECT_ROOT/src/main.py" 

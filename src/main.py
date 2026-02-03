@@ -13,6 +13,54 @@ from utils.rudderstack_api import RudderstackAPIClient
 from functools import wraps
 import pandas as pd
 
+import os
+
+
+def bootstrap_env():
+    """
+    Synchronizes specific environment variables from the current process environment
+    to the .env file.
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_file = os.path.join(project_root, ".env")
+
+    vars_to_sync = [
+        "RETRIEVAL_API_URL",
+        "RAG_ADMIN_USERNAME",
+        "RAG_ADMIN_PASSWORD",
+        "IS_CLOUD_BASED",
+        "RUDDERSTACK_PAT",
+    ]
+
+    existing_env = {}
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                if "=" in line and not line.strip().startswith("#"):
+                    k, v = line.strip().split("=", 1)
+                    existing_env[k] = v
+
+    updates = {}
+    for var in vars_to_sync:
+        val = os.environ.get(var)
+        if val:
+            if existing_env.get(var) != val:
+                updates[var] = val
+                print(f"[Bootstrap] Syncing {var} from environment to .env")
+
+    if updates:
+        with open(env_file, "a") as f:
+            if os.path.getsize(env_file) > 0 and not open(
+                env_file, "r"
+            ).read().endswith("\n"):
+                f.write("\n")
+            for k, v in updates.items():
+                f.write(f"{k}={v}\n")
+
+
+# Run bootstrap before loading dotenv
+bootstrap_env()
+
 load_dotenv()
 
 logger = setup_logger(__name__)
