@@ -16,8 +16,8 @@ def bootstrap_env():
     # Variables that must be synced if present in the runtime environment
     vars_to_sync = [
         "RETRIEVAL_API_URL",
-        "RUDDERSTACK_ADMIN_USERNAME",
-        "RUDDERSTACK_ADMIN_PASSWORD",
+        "RAG_ADMIN_USERNAME",
+        "RAG_ADMIN_PASSWORD",
         "IS_CLOUD_BASED",
         "RUDDERSTACK_PAT",
     ]
