@@ -5,14 +5,34 @@ from collections import OrderedDict
 ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 
 # Define environment variable groups with metadata for extensibility
-ENV_GROUPS = OrderedDict([
-    ("RUDDERSTACK", [
-        {"name": "RUDDERSTACK_PAT", "required": False, "secret": True, "help": "Your RudderStack personal access token"},
-    ]),
-    ("ENVIRONMENT", [
-        {"name": "IS_CLOUD_BASED", "required": False, "secret": False, "help": "Set to 'true' if running in kubernetes pod environment (skips virtual environment creation)", "default": "false"},
-    ]),
-])
+ENV_GROUPS = OrderedDict(
+    [
+        (
+            "RUDDERSTACK",
+            [
+                {
+                    "name": "RUDDERSTACK_PAT",
+                    "required": False,
+                    "secret": True,
+                    "help": "Your RudderStack personal access token",
+                },
+            ],
+        ),
+        (
+            "ENVIRONMENT",
+            [
+                {
+                    "name": "IS_CLOUD_BASED",
+                    "required": False,
+                    "secret": False,
+                    "help": "Set to 'true' if running in kubernetes pod environment (skips virtual environment creation)",
+                    "default": "false",
+                },
+            ],
+        ),
+    ]
+)
+
 
 def read_env_file(path):
     env = {}
@@ -20,11 +40,12 @@ def read_env_file(path):
         with open(path) as f:
             for line in f:
                 line = line.strip()
-                if not line or line.startswith('#') or '=' not in line:
+                if not line or line.startswith("#") or "=" not in line:
                     continue
-                k, v = line.split('=', 1)
+                k, v = line.split("=", 1)
                 env[k.strip()] = v.strip()
     return env
+
 
 def prompt_var(var, current=None, secret=False, help_text=None, required=True):
     prompt = f"{var}"
@@ -46,6 +67,11 @@ def prompt_var(var, current=None, secret=False, help_text=None, required=True):
             return ""
         print("This field is required.")
 
+
+def is_cloud_based(env):
+    return env.get("IS_CLOUD_BASED", "").lower() == "true"
+
+
 def main():
     env = read_env_file(ENV_FILE)
     env_exists = os.path.exists(ENV_FILE)
@@ -61,17 +87,21 @@ def main():
     # Check auth method variables - remove Snowflake auth check
     values = env.copy()
 
-    # Prompt for RudderStack variables
-    for var_meta in ENV_GROUPS["RUDDERSTACK"]:
-        var = var_meta["name"]
-        if not env_exists or var not in env or not env[var]:
-            values[var] = prompt_var(
-                var,
-                current=env.get(var),
-                secret=var_meta.get("secret", False),
-                help_text=var_meta.get("help"),
-                required=var_meta.get("required", True)
-            )
+    # Skip RUDDERSTACK_PAT prompt in cloud mode — PAT is not needed
+    if is_cloud_based(env):
+        print("IS_CLOUD_BASED=true detected, skipping RUDDERSTACK_PAT prompt.")
+    else:
+        # Prompt for RudderStack variables
+        for var_meta in ENV_GROUPS["RUDDERSTACK"]:
+            var = var_meta["name"]
+            if not env_exists or var not in env or not env[var]:
+                values[var] = prompt_var(
+                    var,
+                    current=env.get(var),
+                    secret=var_meta.get("secret", False),
+                    help_text=var_meta.get("help"),
+                    required=var_meta.get("required", True),
+                )
 
     # Prompt for Environment variables
     for var_meta in ENV_GROUPS["ENVIRONMENT"]:
@@ -85,7 +115,7 @@ def main():
                     current=default_value,
                     secret=var_meta.get("secret", False),
                     help_text=var_meta.get("help"),
-                    required=var_meta.get("required", True)
+                    required=var_meta.get("required", True),
                 )
             else:
                 values[var] = env.get(var, default_value)
@@ -96,8 +126,10 @@ def main():
         for group_name, var_metas in ENV_GROUPS.items():
             for var_meta in var_metas:
                 var = var_meta["name"]
-                f.write(f"{var}={values[var]}\n")
+                if var in values:
+                    f.write(f"{var}={values[var]}\n")
     print(".env file created/updated successfully!\n")
+
 
 if __name__ == "__main__":
     main()
