@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from logger import setup_logger
 from utils.analytics import Analytics
 from utils.rudderstack_api import RudderstackAPIClient
+from constants import IS_CLOUD_BASED
 from functools import wraps
 import pandas as pd
 
@@ -59,16 +60,17 @@ mcp = FastMCP(
 )
 
 analytics = Analytics()
-rudder_client = RudderstackAPIClient()
 
-try:
-    user_details = rudder_client.get_user_details()
-    analytics.identify(user_details["id"], {"email": user_details["email"]})
-except Exception as e:
-    logger.error(
-        f"Error identifying user: {e}. MCP requires an active RudderStack account to work properly. Please verify your Personal Access Token is correct"
-    )
-    exit(1)
+if not IS_CLOUD_BASED:
+    rudder_client = RudderstackAPIClient()
+    try:
+        user_details = rudder_client.get_user_details()
+        analytics.identify(user_details["id"], {"email": user_details["email"]})
+    except Exception as e:
+        logger.error(
+            f"Error identifying user: {e}. MCP requires an active RudderStack account to work properly. Please verify your Personal Access Token is correct"
+        )
+        exit(1)
 
 
 def get_app_context(ctx: Context) -> AppContext:
@@ -109,7 +111,7 @@ def track(func):
     return wrapper
 
 
-#@mcp.tool()
+# @mcp.tool()
 @track
 def about_profiles(ctx: Context, topic: str = "profiles") -> str:
     """
@@ -385,13 +387,13 @@ def run_query(ctx: Context, query: str) -> dict:
         return {
             "data": df.to_dict(orient="records"),
             "row_count": len(df),
-            "columns": df.columns.tolist()
+            "columns": df.columns.tolist(),
         }
     else:
         result = warehouse.raw_query(query, response_type="list")
         return {
             "data": result,
-            "row_count": len(result) if isinstance(result, list) else 0
+            "row_count": len(result) if isinstance(result, list) else 0,
         }
 
 
@@ -658,7 +660,7 @@ def evaluate_eligible_user_filters(
     )
 
 
-#@mcp.tool()
+# @mcp.tool()
 @track
 def profiles_workflow_guide(
     ctx: Context,
@@ -732,7 +734,7 @@ def profiles_workflow_guide(
 #     - Supports projects with any YAML filename variations
 #     - Requires basic profiles knowledge to interpret results properly
 #       (call about_profiles() first if using via workflow_guide)
-      
+
 #     **Before Calling:**
 #     - This should never be the first tool call in a session. ENSURE YOU HAVE CALLED about_profiles(topic="profiles") before you call this tool.
 
