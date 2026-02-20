@@ -7,7 +7,7 @@ ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 # Define environment variable groups with metadata for extensibility
 ENV_GROUPS = OrderedDict([
     ("RUDDERSTACK", [
-        {"name": "RUDDERSTACK_PAT", "required": True, "secret": True, "help": "Your RudderStack personal access token"},
+        {"name": "RUDDERSTACK_PAT", "required": False, "secret": True, "help": "Your RudderStack personal access token"},
     ]),
     ("ENVIRONMENT", [
         {"name": "IS_CLOUD_BASED", "required": False, "secret": False, "help": "Set to 'true' if running in kubernetes pod environment (skips virtual environment creation)", "default": "false"},
