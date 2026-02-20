@@ -106,8 +106,9 @@ validate_env() {
 
 # Validate environment variables (skip PAT check in cloud mode)
 source .env
-if [ "${IS_CLOUD_BASED,,}" = "true" ]; then
-    print_status "IS_CLOUD_BASED=true, skipping RUDDERSTACK_PAT validation"
+IS_CLOUD_LOWER="${IS_CLOUD_BASED,,}"
+if [[ "$IS_CLOUD_LOWER" == "true" || "$IS_CLOUD_LOWER" == "1" || "$IS_CLOUD_LOWER" == "yes" || "$IS_CLOUD_LOWER" == "on" ]]; then
+    print_status "Cloud mode detected, skipping RUDDERSTACK_PAT validation"
 else
     if ! validate_env; then
         print_error "Please set all required environment variables in .env file"

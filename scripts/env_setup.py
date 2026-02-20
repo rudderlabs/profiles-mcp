@@ -69,7 +69,8 @@ def prompt_var(var, current=None, secret=False, help_text=None, required=True):
 
 
 def is_cloud_based(env):
-    return env.get("IS_CLOUD_BASED", "").lower() == "true"
+    """Aligned with src/utils/environment.py:is_cloud_based_environment()"""
+    return env.get("IS_CLOUD_BASED", "false").lower() in ["true", "1", "yes", "on"]
 
 
 def main():
@@ -87,23 +88,7 @@ def main():
     # Check auth method variables - remove Snowflake auth check
     values = env.copy()
 
-    # Skip RUDDERSTACK_PAT prompt in cloud mode — PAT is not needed
-    if is_cloud_based(env):
-        print("IS_CLOUD_BASED=true detected, skipping RUDDERSTACK_PAT prompt.")
-    else:
-        # Prompt for RudderStack variables
-        for var_meta in ENV_GROUPS["RUDDERSTACK"]:
-            var = var_meta["name"]
-            if not env_exists or var not in env or not env[var]:
-                values[var] = prompt_var(
-                    var,
-                    current=env.get(var),
-                    secret=var_meta.get("secret", False),
-                    help_text=var_meta.get("help"),
-                    required=var_meta.get("required", True),
-                )
-
-    # Prompt for Environment variables
+    # Prompt for Environment variables first so we can check IS_CLOUD_BASED
     for var_meta in ENV_GROUPS["ENVIRONMENT"]:
         var = var_meta["name"]
         # Set default value if not present
@@ -120,14 +105,29 @@ def main():
             else:
                 values[var] = env.get(var, default_value)
 
-    # Write to .env
+    # Skip RUDDERSTACK_PAT prompt in cloud mode — PAT is not needed
+    if is_cloud_based(values):
+        print("Cloud mode detected, skipping RUDDERSTACK_PAT prompt.")
+    else:
+        # Prompt for RudderStack variables
+        for var_meta in ENV_GROUPS["RUDDERSTACK"]:
+            var = var_meta["name"]
+            if not env_exists or var not in env or not env[var]:
+                values[var] = prompt_var(
+                    var,
+                    current=env.get(var),
+                    secret=var_meta.get("secret", False),
+                    help_text=var_meta.get("help"),
+                    required=var_meta.get("required", True),
+                )
+
+    # Write to .env — write all variables, use empty string for unset ones
     print("\nWriting values to .env...")
     with open(ENV_FILE, "w") as f:
         for group_name, var_metas in ENV_GROUPS.items():
             for var_meta in var_metas:
                 var = var_meta["name"]
-                if var in values:
-                    f.write(f"{var}={values[var]}\n")
+                f.write(f"{var}={values.get(var, '')}\n")
     print(".env file created/updated successfully!\n")
 
 
