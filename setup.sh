@@ -104,13 +104,18 @@ validate_env() {
     return 0
 }
 
-# Validate environment variables
-if ! validate_env; then
-    print_error "Please set all required environment variables in .env file"
-    exit 1
+# Validate environment variables (skip PAT check in cloud mode)
+source .env
+IS_CLOUD_LOWER="${IS_CLOUD_BASED,,}"
+if [[ "$IS_CLOUD_LOWER" == "true" || "$IS_CLOUD_LOWER" == "1" || "$IS_CLOUD_LOWER" == "yes" || "$IS_CLOUD_LOWER" == "on" ]]; then
+    print_status "Cloud mode detected, skipping RUDDERSTACK_PAT validation"
+else
+    if ! validate_env; then
+        print_error "Please set all required environment variables in .env file"
+        exit 1
+    fi
+    print_status "Environment variables validated successfully"
 fi
-
-print_status "Environment variables validated successfully"
 
 # Install Python dependencies (uv sync will create .venv and use correct Python version if available)
 print_status "Installing Python dependencies with uv sync..."
