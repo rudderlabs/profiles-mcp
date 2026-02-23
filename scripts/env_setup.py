@@ -12,7 +12,7 @@ ENV_GROUPS = OrderedDict(
             [
                 {
                     "name": "RUDDERSTACK_PAT",
-                    "required": False,
+                    "required": True,
                     "secret": True,
                     "help": "Your RudderStack personal access token",
                 },
