@@ -16,6 +16,8 @@ class RudderstackAPIClient:
         Initialize the RudderStack API client
         """
         self.token = os.getenv('RUDDERSTACK_PAT')
+        if not self.token:
+            raise ValueError("RUDDERSTACK_PAT environment variable is required but not set")
         self.base_url = "https://api.rudderstack.com"
 
     def _get_headers(self) -> Dict[str, str]:
