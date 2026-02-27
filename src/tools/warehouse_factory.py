@@ -1,5 +1,6 @@
 from typing import Optional, Type
 
+from constants import USE_PB_QUERY
 from logger import setup_logger
 from tools.bigquery import BigQuery
 from tools.databricks import Databricks
@@ -131,15 +132,25 @@ class WarehouseManager:
         Raises:
             ValueError: If warehouse type is not supported
         """
-        warehouse_type = connection_details.get("type")
-        if not warehouse_type:
-            raise ValueError("Connection details must include 'type' field")
+        if USE_PB_QUERY:
+            from tools.pb_query_warehouse import PbQueryWarehouse
 
-        # Create warehouse instance
-        warehouse = WarehouseFactory.create_warehouse(warehouse_type)
+            logger.info(
+                f"USE_PB_QUERY enabled: routing '{connection_name}' through pb query"
+            )
+            warehouse = PbQueryWarehouse()
+            connection_details["connection_name"] = connection_name
+            warehouse.initialize_connection(connection_details)
+        else:
+            warehouse_type = connection_details.get("type")
+            if not warehouse_type:
+                raise ValueError("Connection details must include 'type' field")
 
-        # Initialize the connection
-        warehouse.initialize_connection(connection_details)
+            # Create warehouse instance
+            warehouse = WarehouseFactory.create_warehouse(warehouse_type)
+
+            # Initialize the connection
+            warehouse.initialize_connection(connection_details)
 
         # Store the warehouse instance
         self._warehouses[connection_name] = warehouse
@@ -148,6 +159,7 @@ class WarehouseManager:
         self._active_warehouse = warehouse
         self._active_warehouse_name = connection_name
 
+        warehouse_type = connection_details.get("type", "pb_query")
         logger.info(f"Initialized {warehouse_type} warehouse: {connection_name}")
         return warehouse
 
@@ -222,6 +234,13 @@ class WarehouseManager:
         """
         warehouse = self._warehouses.get(connection_name)
         if warehouse:
+            # Call cleanup if available (e.g., PbQueryWarehouse temp dir removal)
+            if hasattr(warehouse, "cleanup") and callable(warehouse.cleanup):
+                try:
+                    warehouse.cleanup()
+                except Exception as e:
+                    logger.warning(f"Error during warehouse cleanup: {e}")
+
             # Close session if it has a close method
             if hasattr(warehouse, "session") and warehouse.session:
                 try:

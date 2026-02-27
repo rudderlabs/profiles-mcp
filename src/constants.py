@@ -19,6 +19,8 @@ elif IS_CLOUD_BASED:
 else:
     RETRIEVAL_API_URL = "https://profiles-mcp-service.rudderstack.com"
 
+USE_PB_QUERY = os.getenv("USE_PB_QUERY", "false").lower() in ("true", "1", "yes")
+
 PB_CONFIG_DIR = Path.home() / ".pb"
 PB_PREFERENCES_FILE = "preferences.yaml"
 PB_PREFERENCES_PATH = PB_CONFIG_DIR / PB_PREFERENCES_FILE
