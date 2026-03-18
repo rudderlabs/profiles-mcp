@@ -1,6 +1,8 @@
 import pytest
 import os
 import yaml
+import shutil
+from unittest.mock import patch
 from tools.warehouse_factory import WarehouseManager
 from tools.profiles import ProfilesTools
 
@@ -8,6 +10,10 @@ from tools.profiles import ProfilesTools
 # Helper to check if a specific connection secret is present in env
 def has_secret(env_var):
     return os.environ.get(env_var) is not None
+
+
+def has_pb_cli():
+    return shutil.which("pb") is not None
 
 
 @pytest.fixture
@@ -75,6 +81,57 @@ class TestSnowflakeIntegration:
             # If information schema access is restricted, continue without failing
             # The suggestions test already validated basic functionality
             pass
+
+
+@pytest.mark.skipif(
+    not has_secret("SNOWFLAKE_CONFIG"), reason="SNOWFLAKE_CONFIG env var not set"
+)
+@pytest.mark.skipif(not has_pb_cli(), reason="pb CLI is not installed")
+class TestSnowflakePbQueryIntegration:
+    @pytest.fixture(autouse=True)
+    def pb_query_mode(self):
+        with patch("tools.warehouse_factory.USE_PB_QUERY", True):
+            yield
+
+    def test_connection_and_simple_query_pb_mode(self, warehouse_manager, profiles_tool):
+        creds = profiles_tool.fetch_warehouse_credentials("snowflake_conn")
+        if creds.get("status") == "error":
+            pytest.skip(f"Unable to fetch snowflake credentials for pb mode: {creds.get('message', 'unknown error')}")
+
+        wh = warehouse_manager.initialize_warehouse(
+            "snowflake_conn", creds["connection_details"]
+        )
+        assert wh.warehouse_type == "snowflake"
+
+        result = wh.raw_query("SELECT 1 as ONE")
+        assert len(result) == 1
+        key = list(result[0].keys())[0]
+        assert str(result[0][key]) == "1"
+
+    def test_metadata_queries_pb_mode(self, warehouse_manager):
+        wh = warehouse_manager.get_warehouse("snowflake_conn")
+        if not wh:
+            pytest.skip("Warehouse not initialized")
+
+        db = wh.connection_details.database
+        schema = wh.connection_details.schema
+
+        suggestions = wh.input_table_suggestions(db, schema)
+        assert isinstance(suggestions, list)
+
+        target_table = suggestions[0] if suggestions else "INFORMATION_SCHEMA.TABLES"
+        if "." in target_table:
+            parts = target_table.split(".")
+            desc_table = parts[-1]
+            desc_schema = parts[-2]
+            desc_db = parts[-3] if len(parts) > 2 else db
+        else:
+            desc_table = target_table
+            desc_schema = schema
+            desc_db = db
+
+        desc = wh.describe_table(desc_db, desc_schema, desc_table)
+        assert isinstance(desc, list)
 
 
 # --- BigQuery Integration ---
