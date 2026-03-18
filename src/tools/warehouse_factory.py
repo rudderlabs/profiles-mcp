@@ -1,10 +1,13 @@
 from typing import Optional, Type
 
+from constants import USE_PB_QUERY
 from logger import setup_logger
+from tools.execution_backends import PbQueryExecutionBackend, SdkExecutionBackend
 from tools.bigquery import BigQuery
 from tools.databricks import Databricks
 from tools.redshift import Redshift
 from tools.snowflake import Snowflake
+from tools.unified_warehouse import UnifiedWarehouse
 from tools.warehouse_base import BaseWarehouse
 
 logger = setup_logger(__name__)
@@ -135,11 +138,20 @@ class WarehouseManager:
         if not warehouse_type:
             raise ValueError("Connection details must include 'type' field")
 
-        # Create warehouse instance
-        warehouse = WarehouseFactory.create_warehouse(warehouse_type)
+        mode = "pb_query" if USE_PB_QUERY else "sdk"
 
-        # Initialize the connection
-        warehouse.initialize_connection(connection_details)
+        if USE_PB_QUERY:
+            backend = PbQueryExecutionBackend(warehouse_type)
+            # In pb-query mode, connection_name is the primary lookup key in siteconfig.
+            init_details = dict(connection_details)
+            init_details["connection_name"] = connection_name
+        else:
+            sdk_warehouse = WarehouseFactory.create_warehouse(warehouse_type)
+            backend = SdkExecutionBackend(sdk_warehouse)
+            init_details = connection_details
+
+        warehouse = UnifiedWarehouse(backend)
+        warehouse.initialize_connection(init_details)
 
         # Store the warehouse instance
         self._warehouses[connection_name] = warehouse
@@ -148,7 +160,9 @@ class WarehouseManager:
         self._active_warehouse = warehouse
         self._active_warehouse_name = connection_name
 
-        logger.info(f"Initialized {warehouse_type} warehouse: {connection_name}")
+        logger.info(
+            f"Initialized {warehouse_type} warehouse: {connection_name} using mode={mode}"
+        )
         return warehouse
 
     def get_warehouse(self, connection_name: str = None) -> Optional[BaseWarehouse]:
@@ -222,6 +236,12 @@ class WarehouseManager:
         """
         warehouse = self._warehouses.get(connection_name)
         if warehouse:
+            if hasattr(warehouse, "cleanup"):
+                try:
+                    warehouse.cleanup()
+                except Exception as e:
+                    logger.warning(f"Error during warehouse cleanup: {e}")
+
             # Close session if it has a close method
             if hasattr(warehouse, "session") and warehouse.session:
                 try:
