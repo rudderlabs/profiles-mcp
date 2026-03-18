@@ -1,7 +1,15 @@
 from abc import ABC, abstractmethod
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
 from typing import Any, Dict, List, Union
+from uuid import uuid4
 
 import pandas as pd
+import yaml
 
 from logger import setup_logger
 from tools.warehouse_base import BaseWarehouse, WarehouseConnectionDetails
@@ -112,24 +120,276 @@ class PbQueryStrategy(ABC):
     def list_tables_query(self, database: str, schema: str) -> str:
         """Build helper SQL to list tables in a schema."""
 
+    @abstractmethod
+    def top_events_query(self, database: str, schema: str, table: str) -> str:
+        """Build helper SQL to fetch top events from a tracks table."""
+
+    @abstractmethod
+    def relation_name(self, database: str, schema: str, table: str) -> str:
+        """Build formatted relation name for suggestions/output."""
+
+    def extract_table_names(self, rows: List[Dict]) -> List[str]:
+        """Extract table names from list query output."""
+        names = []
+        for row in rows:
+            name = (
+                row.get("name")
+                or row.get("NAME")
+                or row.get("table")
+                or row.get("tableName")
+                or row.get("table_name")
+                or row.get("TABLE_NAME")
+            )
+            if name:
+                names.append(name)
+        return names
+
+    def normalize_describe_rows(self, rows: List[Dict]) -> List[str]:
+        """Normalize DESCRIBE output to column:type format."""
+        normalized = []
+        for row in rows:
+            col = (
+                row.get("name")
+                or row.get("NAME")
+                or row.get("column_name")
+                or row.get("COLUMN_NAME")
+                or row.get("col_name")
+            )
+            dtype = (
+                row.get("type")
+                or row.get("TYPE")
+                or row.get("data_type")
+                or row.get("DATA_TYPE")
+            )
+            if col and dtype:
+                normalized.append(f"{col}: {dtype}")
+        return normalized
+
+
+class SnowflakePbQueryStrategy(PbQueryStrategy):
+    def warehouse_type(self) -> str:
+        return "snowflake"
+
+    def relation_name(self, database: str, schema: str, table: str) -> str:
+        return f"{database}.{schema}.{table}"
+
+    def describe_table_query(self, database: str, schema: str, table: str) -> str:
+        return f"DESCRIBE TABLE {self.relation_name(database, schema, table)}"
+
+    def list_tables_query(self, database: str, schema: str) -> str:
+        return f"SHOW TABLES IN {database}.{schema}"
+
+    def top_events_query(self, database: str, schema: str, table: str) -> str:
+        relation = self.relation_name(database, schema, table)
+        return (
+            f"SELECT event, count(*) FROM {relation} "
+            "group by event order by 2 desc limit 20"
+        )
+
+
+class BigQueryPbQueryStrategy(PbQueryStrategy):
+    def warehouse_type(self) -> str:
+        return "bigquery"
+
+    def _qualify_relation(self, project: str, dataset: str, relation: str) -> str:
+        parts = relation.split(".")
+        if len(parts) == 3:
+            return relation
+        if len(parts) == 2:
+            return f"{project}.{relation}"
+        return f"{project}.{dataset}.{relation}"
+
+    def _quoted_relation(self, project: str, dataset: str, relation: str) -> str:
+        fq = self._qualify_relation(project, dataset, relation)
+        return f"`{fq}`"
+
+    def relation_name(self, database: str, schema: str, table: str) -> str:
+        return self._qualify_relation(database, schema, table)
+
+    def describe_table_query(self, database: str, schema: str, table: str) -> str:
+        return (
+            "SELECT column_name AS name, data_type AS type "
+            f"FROM `{database}.{schema}.INFORMATION_SCHEMA.COLUMNS` "
+            f"WHERE table_name = '{table}' "
+            "ORDER BY ordinal_position"
+        )
+
+    def list_tables_query(self, database: str, schema: str) -> str:
+        return (
+            "SELECT table_name "
+            f"FROM `{database}.{schema}.INFORMATION_SCHEMA.TABLES` "
+            "WHERE table_type = 'BASE TABLE'"
+        )
+
+    def top_events_query(self, database: str, schema: str, table: str) -> str:
+        relation = self._quoted_relation(database, schema, table)
+        return (
+            "SELECT event, COUNT(*) as count "
+            f"FROM {relation} "
+            "GROUP BY event ORDER BY count DESC LIMIT 20"
+        )
+
+
+class DatabricksPbQueryStrategy(PbQueryStrategy):
+    def __init__(self, catalog: str = None):
+        self._catalog = catalog
+
+    def warehouse_type(self) -> str:
+        return "databricks"
+
+    def _is_uc(self) -> bool:
+        return bool(self._catalog and self._catalog.strip())
+
+    def relation_name(self, database: str, schema: str, table: str) -> str:
+        if self._is_uc():
+            return f"{self._catalog}.{schema}.{table}"
+        if database and database.strip() and database != schema:
+            return f"{database}.{schema}.{table}"
+        return f"{schema}.{table}"
+
+    def describe_table_query(self, database: str, schema: str, table: str) -> str:
+        return f"DESCRIBE TABLE {self.relation_name(database, schema, table)}"
+
+    def list_tables_query(self, database: str, schema: str) -> str:
+        if self._is_uc():
+            return f"SHOW TABLES IN {self._catalog}.{schema}"
+        if database and database.strip() and database != schema:
+            return f"SHOW TABLES IN {database}.{schema}"
+        return f"SHOW TABLES IN {schema}"
+
+    def top_events_query(self, database: str, schema: str, table: str) -> str:
+        relation = self.relation_name(database, schema, table)
+        return (
+            "SELECT event, COUNT(*) as count "
+            f"FROM {relation} GROUP BY event ORDER BY count DESC LIMIT 20"
+        )
+
+
+class RedshiftPbQueryStrategy(PbQueryStrategy):
+    def warehouse_type(self) -> str:
+        return "redshift"
+
+    def relation_name(self, database: str, schema: str, table: str) -> str:
+        if database and database.strip() and database != schema:
+            return f"{database}.{schema}.{table}"
+        return f"{schema}.{table}"
+
+    def describe_table_query(self, database: str, schema: str, table: str) -> str:
+        # Intentionally relies on pb output normalization for DESCRIBE TABLE.
+        return f"DESCRIBE TABLE {self.relation_name(database, schema, table)}"
+
+    def list_tables_query(self, database: str, schema: str) -> str:
+        return (
+            "SELECT table_name FROM information_schema.tables "
+            f"WHERE table_schema = '{schema}' ORDER BY table_name"
+        )
+
+    def top_events_query(self, database: str, schema: str, table: str) -> str:
+        relation = self.relation_name(database, schema, table)
+        return (
+            "SELECT event, COUNT(*) as count "
+            f"FROM {relation} GROUP BY event ORDER BY count DESC LIMIT 20"
+        )
+
 
 class PbQueryExecutionBackend(WarehouseExecutionBackend):
-    """Placeholder backend boundary for pb-query mode.
+    """Backend that executes SQL through `pb query` CLI."""
 
-    Full subprocess implementation is delivered in the next PR.
-    """
+    ANSI_ESCAPE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+    _schema_version_cache: int = None
 
     def __init__(self, warehouse_type: str):
-        self._warehouse_type = warehouse_type
+        self._warehouse_type = warehouse_type.lower()
         self._connection_details: WarehouseConnectionDetails = None
+        self._strategy: PbQueryStrategy = None
+        self._stub_project_path: str = None
+        self._connection_name: str = None
+        self._siteconfig_path: str = None
         self._session = None
+
+    @classmethod
+    def _get_schema_version(cls) -> int:
+        if cls._schema_version_cache is not None:
+            return cls._schema_version_cache
+
+        try:
+            result = subprocess.run(
+                ["pb", "version"], capture_output=True, text=True, timeout=30
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "pb CLI is not available. Please install profiles-rudderstack and ensure pb is on PATH."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("pb CLI version check timed out") from exc
+
+        combined_output = (result.stdout or "") + (result.stderr or "")
+        match = re.search(r"Native schema version:\s+(\d+)", combined_output)
+        if not match:
+            raise RuntimeError("Could not determine pb schema version from pb version")
+
+        cls._schema_version_cache = int(match.group(1))
+        return cls._schema_version_cache
+
+    def _build_strategy(self, connection_details: dict) -> PbQueryStrategy:
+        if self._warehouse_type == "snowflake":
+            return SnowflakePbQueryStrategy()
+        if self._warehouse_type == "bigquery":
+            return BigQueryPbQueryStrategy()
+        if self._warehouse_type == "databricks":
+            return DatabricksPbQueryStrategy(
+                catalog=connection_details.get("catalog")
+            )
+        if self._warehouse_type == "redshift":
+            return RedshiftPbQueryStrategy()
+        raise ValueError(f"Unsupported warehouse type for pb-query mode: {self._warehouse_type}")
+
+    def _default_siteconfig_path(self) -> str:
+        return str(Path.home() / ".pb" / "siteconfig.yaml")
+
+    def _setup_stub_project(self) -> None:
+        self._stub_project_path = tempfile.mkdtemp(prefix="pb_mcp_")
+        os.makedirs(os.path.join(self._stub_project_path, "models"), exist_ok=True)
+        os.makedirs(os.path.join(self._stub_project_path, "output"), exist_ok=True)
+
+        schema_version = self._get_schema_version()
+        pb_project = {
+            "name": "pb_mcp_stub",
+            "schema_version": schema_version,
+            "connection": self._connection_name,
+            "model_folders": ["models"],
+        }
+        with open(
+            os.path.join(self._stub_project_path, "pb_project.yaml"), "w"
+        ) as handle:
+            yaml.dump(pb_project, handle, default_flow_style=False)
+
+    def _concise_error(self, stderr: str, fallback: str) -> str:
+        clean = self.ANSI_ESCAPE.sub("", stderr or "").strip()
+        if not clean:
+            return fallback
+        first_line = clean.splitlines()[0].strip()
+        return first_line or fallback
 
     def initialize_connection(self, connection_details: dict) -> None:
         self._connection_details = WarehouseConnectionDetails(connection_details)
-        raise NotImplementedError(
-            "PbQueryExecutionBackend is scaffolded but not implemented yet. "
-            "Use USE_PB_QUERY=false for SDK mode."
+        self._strategy = self._build_strategy(connection_details)
+        self._connection_name = connection_details.get("connection_name")
+        self._siteconfig_path = connection_details.get(
+            "siteconfig_path", self._default_siteconfig_path()
         )
+
+        if not self._connection_name:
+            raise ValueError("connection_details must include 'connection_name' for pb-query mode")
+
+        self._setup_stub_project()
+        self._session = True
+
+        try:
+            self.raw_query("SELECT 1")
+        except Exception:
+            self.cleanup()
+            raise
 
     def create_session(self) -> Any:
         return True
@@ -140,20 +400,180 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
     def raw_query(
         self, query: str, response_type: str = "list"
     ) -> Union[List[Dict], pd.DataFrame]:
-        raise NotImplementedError("PbQueryExecutionBackend raw_query not implemented")
+        if not self._stub_project_path:
+            raise RuntimeError("pb-query backend is not initialized")
+
+        csv_name = f"query_{uuid4().hex}.csv"
+        csv_path = os.path.join(self._stub_project_path, "output", csv_name)
+
+        cmd = [
+            "pb",
+            "query",
+            query,
+            "-p",
+            self._stub_project_path,
+            "-f",
+            csv_name,
+            "--max_rows",
+            "0",
+            "--migrate_on_load",
+        ]
+
+        if self._siteconfig_path and self._siteconfig_path != self._default_siteconfig_path():
+            cmd.extend(["-c", self._siteconfig_path])
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=540,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "pb CLI is not available. Please install profiles-rudderstack and ensure pb is on PATH."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            logger.debug(f"pb query timeout. sql={query}")
+            raise RuntimeError(
+                "Query execution timed out in pb query. Try reducing query scope."
+            ) from exc
+
+        if result.returncode != 0:
+            stderr_clean = self.ANSI_ESCAPE.sub("", result.stderr or "")
+            logger.debug(
+                "pb query failed",
+                extra={
+                    "sql": query,
+                    "returncode": result.returncode,
+                    "stderr": stderr_clean,
+                },
+            )
+            concise = self._concise_error(
+                stderr_clean,
+                "pb query execution failed. Please verify SQL and connection configuration.",
+            )
+            raise RuntimeError(concise)
+
+        if not os.path.exists(csv_path):
+            logger.debug("pb query completed without CSV output", extra={"sql": query})
+            raise RuntimeError(
+                "pb query returned no output file. Please verify connection and query syntax."
+            )
+
+        try:
+            df = pd.read_csv(csv_path, na_values=["<nil>"])
+        finally:
+            try:
+                if os.path.exists(csv_path):
+                    os.remove(csv_path)
+            except OSError:
+                pass
+
+        if response_type == "list":
+            return df.to_dict(orient="records")
+        if response_type == "pandas":
+            for col in df.columns:
+                if df[col].dtype == "object":
+                    df[col] = df[col].fillna("Null")
+            return df
+        raise ValueError(f"Invalid response_type: {response_type}")
 
     def describe_table(self, database: str, schema: str, table: str) -> List[str]:
-        raise NotImplementedError(
-            "PbQueryExecutionBackend describe_table not implemented"
-        )
+        try:
+            query = self._strategy.describe_table_query(database, schema, table)
+            rows = self.raw_query(query, response_type="list")
+            normalized = self._strategy.normalize_describe_rows(rows)
+            if normalized:
+                return normalized
+            return ["Failed to describe table: empty schema metadata returned"]
+        except Exception as exc:
+            logger.debug(
+                "pb describe_table failed",
+                extra={
+                    "database": database,
+                    "schema": schema,
+                    "table": table,
+                    "error": str(exc),
+                },
+            )
+            return ["Failed to describe table: unable to fetch table metadata"]
 
     def input_table_suggestions(self, database: str, schemas: str) -> List[str]:
-        raise NotImplementedError(
-            "PbQueryExecutionBackend input_table_suggestions not implemented"
-        )
+        default_tables = ["tracks", "pages", "identifies", "screens"]
+        schema_list = [s.strip() for s in schemas.split(",") if s.strip()]
+        suggestions = []
+
+        def find_matching_tables(schema_name: str, table_names: list, candidates: list) -> list:
+            matches = []
+            for candidate in candidates:
+                for table_name in table_names:
+                    if candidate.lower() in table_name.lower():
+                        matches.append(
+                            self._strategy.relation_name(database, schema_name, table_name)
+                        )
+            return matches
+
+        try:
+            for schema_name in schema_list:
+                rows = self.raw_query(
+                    self._strategy.list_tables_query(database, schema_name),
+                    response_type="list",
+                )
+                table_names = self._strategy.extract_table_names(rows)
+
+                suggestions.extend(
+                    find_matching_tables(schema_name, table_names, default_tables)
+                )
+
+                tracks_tables = [t for t in table_names if "tracks" in t.lower()]
+                for tracks_table in tracks_tables:
+                    try:
+                        event_rows = self.raw_query(
+                            self._strategy.top_events_query(
+                                database, schema_name, tracks_table
+                            ),
+                            response_type="list",
+                        )
+                        event_names = [
+                            row.get("event")
+                            or row.get("EVENT")
+                            or row.get("Event")
+                            for row in event_rows
+                            if row.get("event") or row.get("EVENT") or row.get("Event")
+                        ]
+                        suggestions.extend(
+                            find_matching_tables(
+                                schema_name,
+                                table_names,
+                                [name for name in event_names if isinstance(name, str)],
+                            )
+                        )
+                    except Exception as exc:
+                        logger.debug(
+                            "pb top-events query failed",
+                            extra={
+                                "schema": schema_name,
+                                "table": tracks_table,
+                                "error": str(exc),
+                            },
+                        )
+        except Exception as exc:
+            logger.debug(
+                "pb input_table_suggestions failed",
+                extra={"database": database, "schemas": schemas, "error": str(exc)},
+            )
+
+        return list(set(suggestions))
 
     def cleanup(self) -> None:
-        return None
+        if self._stub_project_path and os.path.exists(self._stub_project_path):
+            try:
+                shutil.rmtree(self._stub_project_path)
+            except OSError as exc:
+                logger.warning(f"Failed to clean up pb temp project: {exc}")
+        self._stub_project_path = None
+        self._session = None
 
     @property
     def connection_details(self) -> WarehouseConnectionDetails:
