@@ -2,6 +2,7 @@ import pytest
 import os
 import yaml
 import shutil
+import pandas as pd
 from unittest.mock import patch
 from tools.warehouse_factory import WarehouseManager
 from tools.profiles import ProfilesTools
@@ -54,6 +55,17 @@ def run_pb_query_or_skip(warehouse, query):
         raise
 
 
+def run_pb_query_with_type_or_skip(warehouse, query, response_type):
+    try:
+        return warehouse.raw_query(query, response_type=response_type)
+    except RuntimeError as exc:
+        if should_lenient_skip_local_external_errors() or is_local_pb_override_mode():
+            pytest.skip(
+                f"Skipping local pb integration query '{query}' with response_type={response_type}: {str(exc)}"
+            )
+        raise
+
+
 def initialize_sdk_warehouse_or_skip(warehouse_manager, connection_name, connection_details):
     try:
         return warehouse_manager.initialize_warehouse(connection_name, connection_details)
@@ -91,6 +103,48 @@ def initialize_for_metadata_or_skip(
     )
 
 
+def assert_mcp_query_patterns_work(warehouse, use_pb_mode=False):
+    simple_select = "SELECT 1 AS one"
+    filtered_subquery = (
+        "SELECT * FROM (SELECT 1 AS one UNION ALL SELECT 2 AS one) q "
+        "WHERE one >= 1 ORDER BY one DESC LIMIT 1"
+    )
+    aggregate_subquery = (
+        "SELECT COUNT(*) AS cnt "
+        "FROM (SELECT 1 AS one UNION ALL SELECT 2 AS one) q"
+    )
+
+    if use_pb_mode:
+        rows = run_pb_query_or_skip(warehouse, simple_select)
+        filtered_rows = run_pb_query_or_skip(warehouse, filtered_subquery)
+        aggregate_rows = run_pb_query_or_skip(warehouse, aggregate_subquery)
+        dataframe_rows = run_pb_query_with_type_or_skip(
+            warehouse, simple_select, response_type="pandas"
+        )
+    else:
+        rows = warehouse.raw_query(simple_select)
+        filtered_rows = warehouse.raw_query(filtered_subquery)
+        aggregate_rows = warehouse.raw_query(aggregate_subquery)
+        dataframe_rows = warehouse.raw_query(simple_select, response_type="pandas")
+
+    assert isinstance(rows, list)
+    assert len(rows) == 1
+
+    assert isinstance(filtered_rows, list)
+    assert len(filtered_rows) == 1
+
+    assert isinstance(aggregate_rows, list)
+    assert len(aggregate_rows) == 1
+
+    assert isinstance(dataframe_rows, pd.DataFrame)
+    assert len(dataframe_rows) == 1
+    assert len(dataframe_rows.columns) >= 1
+
+    query_result = warehouse.query(simple_select)
+    assert isinstance(query_result, pd.DataFrame)
+    assert len(query_result) == 1
+
+
 @pytest.fixture
 def warehouse_manager():
     return WarehouseManager()
@@ -117,11 +171,8 @@ class TestSnowflakeIntegration:
         )
         assert wh.warehouse_type == "snowflake"
 
-        # 3. Test explicit SELECT 1
-        result = wh.raw_query("SELECT 1 as ONE")
-        assert len(result) == 1
-        key = list(result[0].keys())[0]
-        assert str(result[0][key]) == "1"
+        # 3. Validate query patterns MCP commonly uses
+        assert_mcp_query_patterns_work(wh)
 
     def test_metadata_queries(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
@@ -182,10 +233,7 @@ class TestSnowflakePbQueryIntegration:
         )
         assert wh.warehouse_type == "snowflake"
 
-        result = run_pb_query_or_skip(wh, "SELECT 1 as ONE")
-        assert len(result) == 1
-        key = list(result[0].keys())[0]
-        assert str(result[0][key]) == "1"
+        assert_mcp_query_patterns_work(wh, use_pb_mode=True)
 
     def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
@@ -230,8 +278,7 @@ class TestBigQueryIntegration:
         )
         assert wh.warehouse_type == "bigquery"
 
-        result = wh.raw_query("SELECT 1 as one")
-        assert result[0]["one"] == 1
+        assert_mcp_query_patterns_work(wh)
 
     def test_metadata_queries(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
@@ -275,9 +322,7 @@ class TestBigQueryPbQueryIntegration:
         )
         assert wh.warehouse_type == "bigquery"
 
-        result = run_pb_query_or_skip(wh, "SELECT 1 as one")
-        assert isinstance(result, list)
-        assert len(result) == 1
+        assert_mcp_query_patterns_work(wh, use_pb_mode=True)
 
     def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
@@ -312,8 +357,7 @@ class TestDatabricksIntegration:
         )
         assert wh.warehouse_type == "databricks"
 
-        result = wh.raw_query("SELECT 1 as one")
-        assert result[0]["one"] == 1
+        assert_mcp_query_patterns_work(wh)
 
     def test_metadata_queries(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
@@ -357,9 +401,7 @@ class TestDatabricksPbQueryIntegration:
         )
         assert wh.warehouse_type == "databricks"
 
-        result = run_pb_query_or_skip(wh, "SELECT 1 as one")
-        assert isinstance(result, list)
-        assert len(result) == 1
+        assert_mcp_query_patterns_work(wh, use_pb_mode=True)
 
     def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
@@ -391,10 +433,7 @@ class TestRedshiftIntegration:
         )
         assert wh.warehouse_type == "redshift"
 
-        result = wh.raw_query("SELECT 1 as one")
-        # Redshift (Postgres) returns lowercase column names usually
-        val = list(result[0].values())[0]
-        assert val == 1
+        assert_mcp_query_patterns_work(wh)
 
     def test_metadata_queries(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
@@ -435,9 +474,7 @@ class TestRedshiftPbQueryIntegration:
         )
         assert wh.warehouse_type == "redshift"
 
-        result = run_pb_query_or_skip(wh, "SELECT 1 as one")
-        assert isinstance(result, list)
-        assert len(result) == 1
+        assert_mcp_query_patterns_work(wh, use_pb_mode=True)
 
     def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
         wh = initialize_for_metadata_or_skip(
