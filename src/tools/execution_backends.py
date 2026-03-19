@@ -315,6 +315,7 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
         self._connection_name: str = None
         self._siteconfig_path: str = None
         self._session = None
+        self._pb_initialized = False
 
     @classmethod
     def _get_schema_version(cls) -> int:
@@ -356,6 +357,52 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
     def _default_siteconfig_path(self) -> str:
         return str(Path.home() / ".pb" / "siteconfig.yaml")
 
+    def _run_timeout_seconds(self) -> int:
+        raw_value = os.environ.get("PB_RUN_TIMEOUT_SECONDS", "540")
+        try:
+            timeout = int(raw_value)
+        except (TypeError, ValueError):
+            timeout = 540
+        return max(timeout, 1)
+
+    def _run_pb_initialization(self) -> None:
+        if self._pb_initialized:
+            return
+
+        cmd = ["pb", "run", "-p", self._stub_project_path, "--migrate_on_load"]
+
+        if self._siteconfig_path and self._siteconfig_path != self._default_siteconfig_path():
+            cmd.extend(["-c", self._siteconfig_path])
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._run_timeout_seconds(),
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "pb CLI is not available. Please install profiles-rudderstack and ensure pb is on PATH."
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            stderr_text = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+            concise = self._concise_error(
+                stderr_text,
+                "pb run initialization timed out.",
+            )
+            raise RuntimeError(concise) from exc
+
+        if result.returncode != 0:
+            stderr_clean = self.ANSI_ESCAPE.sub("", result.stderr or "")
+            concise = self._concise_error(
+                stderr_clean,
+                "pb run initialization failed. Please verify connection and siteconfig.",
+            )
+            raise RuntimeError(concise)
+
+        self._pb_initialized = True
+
     def _setup_stub_project(self) -> None:
         self._stub_project_path = tempfile.mkdtemp(prefix="pb_mcp_")
         os.makedirs(os.path.join(self._stub_project_path, "models"), exist_ok=True)
@@ -395,6 +442,7 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
         self._session = True
 
         try:
+            self._run_pb_initialization()
             self.raw_query("SELECT 1")
         except Exception:
             self.cleanup()
@@ -411,6 +459,8 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
     ) -> Union[List[Dict], pd.DataFrame]:
         if not self._stub_project_path:
             raise RuntimeError("pb-query backend is not initialized")
+
+        self._run_pb_initialization()
 
         csv_name = f"query_{uuid4().hex}.csv"
         csv_path = os.path.join(self._stub_project_path, "output", csv_name)
@@ -445,8 +495,14 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
             ) from exc
         except subprocess.TimeoutExpired as exc:
             logger.debug(f"pb query timeout. sql={query}")
+            timeout_detail = ""
+            stderr_text = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+            if stderr_text:
+                first_line = self._concise_error(stderr_text, "")
+                if first_line:
+                    timeout_detail = f" Last stderr: {first_line}"
             raise RuntimeError(
-                "Query execution timed out in pb query. Try reducing query scope."
+                f"Query execution timed out in pb query. Try reducing query scope or disabling migrations.{timeout_detail}"
             ) from exc
 
         if result.returncode != 0:
@@ -584,6 +640,7 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
                 logger.warning(f"Failed to clean up pb temp project: {exc}")
         self._stub_project_path = None
         self._session = None
+        self._pb_initialized = False
 
     @property
     def connection_details(self) -> WarehouseConnectionDetails:

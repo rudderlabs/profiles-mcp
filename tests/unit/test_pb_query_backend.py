@@ -24,6 +24,7 @@ def _make_backend() -> PbQueryExecutionBackend:
     backend._stub_project_path = tempfile.mkdtemp(prefix="pb_mcp_test_")
     os.makedirs(os.path.join(backend._stub_project_path, "output"), exist_ok=True)
     backend._session = True
+    backend._pb_initialized = True
     return backend
 
 
@@ -132,6 +133,36 @@ class TestRawQuery:
 
         assert len(rows) == 1
         assert pd.isna(rows[0]["COL_B"])
+        backend.cleanup()
+
+
+class TestInitialization:
+    def test_runs_pb_run_before_first_query(self):
+        backend = PbQueryExecutionBackend("snowflake")
+        backend._strategy = SnowflakePbQueryStrategy()
+        backend._connection_name = "snowflake_conn"
+        backend._siteconfig_path = backend._default_siteconfig_path()
+        backend._stub_project_path = tempfile.mkdtemp(prefix="pb_mcp_test_")
+        os.makedirs(os.path.join(backend._stub_project_path, "output"), exist_ok=True)
+        backend._session = True
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["pb", "run"]:
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            csv_name = cmd[cmd.index("-f") + 1]
+            csv_path = os.path.join(backend._stub_project_path, "output", csv_name)
+            with open(csv_path, "w") as handle:
+                handle.write("COL_A\n1\n")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        with patch("tools.execution_backends.subprocess.run", side_effect=fake_run) as mock_run:
+            rows = backend.raw_query("SELECT 1")
+
+        assert rows == [{"COL_A": 1}]
+        first_call = mock_run.call_args_list[0].args[0]
+        assert first_call[:2] == ["pb", "run"]
+        assert backend._pb_initialized is True
         backend.cleanup()
 
 
