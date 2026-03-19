@@ -164,6 +164,46 @@ class TestBigQueryIntegration:
         assert isinstance(suggestions, list)
 
 
+@pytest.mark.skipif(
+    not has_secret("BIGQUERY_CONFIG"), reason="BIGQUERY_CONFIG env var not set"
+)
+@pytest.mark.skipif(not has_pb_cli(), reason="pb CLI is not installed")
+class TestBigQueryPbQueryIntegration:
+    @pytest.fixture(autouse=True)
+    def pb_query_mode(self):
+        with patch("tools.warehouse_factory.USE_PB_QUERY", True):
+            yield
+
+    def test_connection_and_simple_query_pb_mode(self, warehouse_manager, profiles_tool):
+        creds = profiles_tool.fetch_warehouse_credentials("bigquery_conn")
+        if creds.get("status") == "error":
+            pytest.skip(
+                f"Unable to fetch bigquery credentials for pb mode: {creds.get('message', 'unknown error')}"
+            )
+
+        wh = warehouse_manager.initialize_warehouse(
+            "bigquery_conn", creds["connection_details"]
+        )
+        assert wh.warehouse_type == "bigquery"
+
+        result = wh.raw_query("SELECT 1 as one")
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    def test_metadata_queries_pb_mode(self, warehouse_manager):
+        wh = warehouse_manager.get_warehouse("bigquery_conn")
+        if not wh:
+            pytest.skip("Warehouse not initialized")
+
+        project = wh.connection_details.connection_details.get("project_id")
+        dataset = wh.connection_details.connection_details.get("dataset")
+        if not project or not dataset:
+            pytest.skip("BigQuery project_id/dataset not available")
+
+        suggestions = wh.input_table_suggestions(project, dataset)
+        assert isinstance(suggestions, list)
+
+
 # --- Databricks Integration ---
 @pytest.mark.skipif(
     not has_secret("DATABRICKS_CONFIG"), reason="DATABRICKS_CONFIG env var not set"
@@ -197,6 +237,45 @@ class TestDatabricksIntegration:
         assert isinstance(suggestions, list)
 
 
+@pytest.mark.skipif(
+    not has_secret("DATABRICKS_CONFIG"), reason="DATABRICKS_CONFIG env var not set"
+)
+@pytest.mark.skipif(not has_pb_cli(), reason="pb CLI is not installed")
+class TestDatabricksPbQueryIntegration:
+    @pytest.fixture(autouse=True)
+    def pb_query_mode(self):
+        with patch("tools.warehouse_factory.USE_PB_QUERY", True):
+            yield
+
+    def test_connection_and_simple_query_pb_mode(self, warehouse_manager, profiles_tool):
+        creds = profiles_tool.fetch_warehouse_credentials("databricks_conn")
+        if creds.get("status") == "error":
+            pytest.skip(
+                f"Unable to fetch databricks credentials for pb mode: {creds.get('message', 'unknown error')}"
+            )
+
+        wh = warehouse_manager.initialize_warehouse(
+            "databricks_conn", creds["connection_details"]
+        )
+        assert wh.warehouse_type == "databricks"
+
+        result = wh.raw_query("SELECT 1 as one")
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    def test_metadata_queries_pb_mode(self, warehouse_manager):
+        wh = warehouse_manager.get_warehouse("databricks_conn")
+        if not wh:
+            pytest.skip("Warehouse not initialized")
+
+        connection_details = wh.connection_details.connection_details
+        database = connection_details.get("catalog") or connection_details.get("database")
+        schema = connection_details.get("schema", "default")
+
+        suggestions = wh.input_table_suggestions(database or "", schema)
+        assert isinstance(suggestions, list)
+
+
 # --- Redshift Integration ---
 @pytest.mark.skipif(
     not has_secret("REDSHIFT_CONFIG"), reason="REDSHIFT_CONFIG env var not set"
@@ -225,5 +304,42 @@ class TestRedshiftIntegration:
         # Redshift usually has schemas like 'public'
         schemas = "public,information_schema"
 
+        suggestions = wh.input_table_suggestions(db, schemas)
+        assert isinstance(suggestions, list)
+
+
+@pytest.mark.skipif(
+    not has_secret("REDSHIFT_CONFIG"), reason="REDSHIFT_CONFIG env var not set"
+)
+@pytest.mark.skipif(not has_pb_cli(), reason="pb CLI is not installed")
+class TestRedshiftPbQueryIntegration:
+    @pytest.fixture(autouse=True)
+    def pb_query_mode(self):
+        with patch("tools.warehouse_factory.USE_PB_QUERY", True):
+            yield
+
+    def test_connection_and_simple_query_pb_mode(self, warehouse_manager, profiles_tool):
+        creds = profiles_tool.fetch_warehouse_credentials("redshift_conn")
+        if creds.get("status") == "error":
+            pytest.skip(
+                f"Unable to fetch redshift credentials for pb mode: {creds.get('message', 'unknown error')}"
+            )
+
+        wh = warehouse_manager.initialize_warehouse(
+            "redshift_conn", creds["connection_details"]
+        )
+        assert wh.warehouse_type == "redshift"
+
+        result = wh.raw_query("SELECT 1 as one")
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    def test_metadata_queries_pb_mode(self, warehouse_manager):
+        wh = warehouse_manager.get_warehouse("redshift_conn")
+        if not wh:
+            pytest.skip("Warehouse not initialized")
+
+        db = wh.connection_details.database
+        schemas = "public,information_schema"
         suggestions = wh.input_table_suggestions(db, schemas)
         assert isinstance(suggestions, list)
