@@ -65,6 +65,32 @@ def initialize_sdk_warehouse_or_skip(warehouse_manager, connection_name, connect
         raise
 
 
+def initialize_for_metadata_or_skip(
+    warehouse_manager,
+    profiles_tool,
+    connection_name,
+    use_pb_mode=False,
+):
+    creds = profiles_tool.fetch_warehouse_credentials(connection_name)
+    if creds.get("status") == "error":
+        pytest.skip(
+            f"Unable to fetch {connection_name} credentials for metadata test: {creds.get('message', 'unknown error')}"
+        )
+
+    if use_pb_mode:
+        return initialize_pb_warehouse_or_skip(
+            warehouse_manager,
+            connection_name,
+            creds["connection_details"],
+        )
+
+    return initialize_sdk_warehouse_or_skip(
+        warehouse_manager,
+        connection_name,
+        creds["connection_details"],
+    )
+
+
 @pytest.fixture
 def warehouse_manager():
     return WarehouseManager()
@@ -97,10 +123,12 @@ class TestSnowflakeIntegration:
         key = list(result[0].keys())[0]
         assert str(result[0][key]) == "1"
 
-    def test_metadata_queries(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("snowflake_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "snowflake_conn",
+        )
 
         db = wh.connection_details.database
         schema = wh.connection_details.schema
@@ -159,10 +187,13 @@ class TestSnowflakePbQueryIntegration:
         key = list(result[0].keys())[0]
         assert str(result[0][key]) == "1"
 
-    def test_metadata_queries_pb_mode(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("snowflake_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "snowflake_conn",
+            use_pb_mode=True,
+        )
 
         db = wh.connection_details.database
         schema = wh.connection_details.schema
@@ -202,14 +233,19 @@ class TestBigQueryIntegration:
         result = wh.raw_query("SELECT 1 as one")
         assert result[0]["one"] == 1
 
-    def test_metadata_queries(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("bigquery_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "bigquery_conn",
+        )
 
         # BigQuery structure is usually project.dataset.table
-        project = wh.connection_details.project_id
-        dataset = wh.connection_details.dataset
+        details = wh.connection_details.connection_details
+        project = details.get("project_id")
+        dataset = details.get("dataset")
+        if not project or not dataset:
+            pytest.skip("BigQuery project_id/dataset not available")
 
         suggestions = wh.input_table_suggestions(project, dataset)
         assert isinstance(suggestions, list)
@@ -243,10 +279,13 @@ class TestBigQueryPbQueryIntegration:
         assert isinstance(result, list)
         assert len(result) == 1
 
-    def test_metadata_queries_pb_mode(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("bigquery_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "bigquery_conn",
+            use_pb_mode=True,
+        )
 
         project = wh.connection_details.connection_details.get("project_id")
         dataset = wh.connection_details.connection_details.get("dataset")
@@ -276,10 +315,12 @@ class TestDatabricksIntegration:
         result = wh.raw_query("SELECT 1 as one")
         assert result[0]["one"] == 1
 
-    def test_metadata_queries(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("databricks_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "databricks_conn",
+        )
 
         # Databricks uses catalog.schema usually, or just schema
         # The connector details might have catalog or http_path implictly
@@ -320,10 +361,13 @@ class TestDatabricksPbQueryIntegration:
         assert isinstance(result, list)
         assert len(result) == 1
 
-    def test_metadata_queries_pb_mode(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("databricks_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "databricks_conn",
+            use_pb_mode=True,
+        )
 
         connection_details = wh.connection_details.connection_details
         database = connection_details.get("catalog") or connection_details.get("database")
@@ -352,10 +396,12 @@ class TestRedshiftIntegration:
         val = list(result[0].values())[0]
         assert val == 1
 
-    def test_metadata_queries(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("redshift_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "redshift_conn",
+        )
 
         db = wh.connection_details.database
         # Redshift usually has schemas like 'public'
@@ -393,10 +439,13 @@ class TestRedshiftPbQueryIntegration:
         assert isinstance(result, list)
         assert len(result) == 1
 
-    def test_metadata_queries_pb_mode(self, warehouse_manager):
-        wh = warehouse_manager.get_warehouse("redshift_conn")
-        if not wh:
-            pytest.skip("Warehouse not initialized")
+    def test_metadata_queries_pb_mode(self, warehouse_manager, profiles_tool):
+        wh = initialize_for_metadata_or_skip(
+            warehouse_manager,
+            profiles_tool,
+            "redshift_conn",
+            use_pb_mode=True,
+        )
 
         db = wh.connection_details.database
         schemas = "public,information_schema"
