@@ -298,6 +298,15 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
     ANSI_ESCAPE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
     _schema_version_cache: int = None
 
+    @staticmethod
+    def _query_timeout_seconds() -> int:
+        raw_value = os.environ.get("PB_QUERY_TIMEOUT_SECONDS", "540")
+        try:
+            timeout = int(raw_value)
+        except (TypeError, ValueError):
+            timeout = 540
+        return max(timeout, 1)
+
     def __init__(self, warehouse_type: str):
         self._warehouse_type = warehouse_type.lower()
         self._connection_details: WarehouseConnectionDetails = None
@@ -423,11 +432,12 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
             cmd.extend(["-c", self._siteconfig_path])
 
         try:
+            timeout_seconds = self._query_timeout_seconds()
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=540,
+                timeout=timeout_seconds,
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
