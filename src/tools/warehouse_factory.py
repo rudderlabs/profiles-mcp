@@ -1,6 +1,6 @@
 from typing import Optional, Type
 
-from constants import USE_PB_QUERY
+from constants import PB_SITE_CONFIG_PATH, USE_PB_QUERY
 from logger import setup_logger
 from tools.execution_backends import PbQueryExecutionBackend, SdkExecutionBackend
 from tools.bigquery import BigQuery
@@ -145,6 +145,7 @@ class WarehouseManager:
             # In pb-query mode, connection_name is the primary lookup key in siteconfig.
             init_details = dict(connection_details)
             init_details["connection_name"] = connection_name
+            init_details["siteconfig_path"] = str(PB_SITE_CONFIG_PATH)
         else:
             sdk_warehouse = WarehouseFactory.create_warehouse(warehouse_type)
             backend = SdkExecutionBackend(sdk_warehouse)
