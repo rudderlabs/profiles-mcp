@@ -481,7 +481,6 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
             csv_name,
             "--max_rows",
             "0",
-            "--migrate_on_load",
         ]
 
         if self._siteconfig_path and self._siteconfig_path != self._default_siteconfig_path():
