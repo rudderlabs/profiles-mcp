@@ -14,6 +14,8 @@ import yaml
 from logger import setup_logger
 from tools.warehouse_base import BaseWarehouse, WarehouseConnectionDetails
 
+_validate_identifier = BaseWarehouse._validate_identifier
+
 logger = setup_logger(__name__)
 
 
@@ -275,8 +277,12 @@ class RedshiftPbQueryStrategy(PbQueryStrategy):
         return f"{schema}.{table}"
 
     def describe_table_query(self, database: str, schema: str, table: str) -> str:
-        # Intentionally relies on pb output normalization for DESCRIBE TABLE.
-        return f"DESCRIBE TABLE {self.relation_name(database, schema, table)}"
+        return (
+            "SELECT column_name AS name, data_type AS type "
+            "FROM information_schema.columns "
+            f"WHERE table_schema = '{schema}' AND table_name = '{table}' "
+            "ORDER BY ordinal_position"
+        )
 
     def list_tables_query(self, database: str, schema: str) -> str:
         return (
@@ -547,6 +553,10 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
 
     def describe_table(self, database: str, schema: str, table: str) -> List[str]:
         try:
+            if database:
+                _validate_identifier(database, "database")
+            _validate_identifier(schema, "schema")
+            _validate_identifier(table, "table")
             query = self._strategy.describe_table_query(database, schema, table)
             rows = self.raw_query(query, response_type="list")
             normalized = self._strategy.normalize_describe_rows(rows)
@@ -569,6 +579,11 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
         default_tables = ["tracks", "pages", "identifies", "screens"]
         schema_list = [s.strip() for s in schemas.split(",") if s.strip()]
         suggestions = []
+
+        if database:
+            _validate_identifier(database, "database")
+        for schema_name in schema_list:
+            _validate_identifier(schema_name, "schema")
 
         def find_matching_tables(schema_name: str, table_names: list, candidates: list) -> list:
             matches = []

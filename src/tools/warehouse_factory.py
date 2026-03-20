@@ -243,14 +243,6 @@ class WarehouseManager:
                 except Exception as e:
                     logger.warning(f"Error during warehouse cleanup: {e}")
 
-            # Close session if it has a close method
-            if hasattr(warehouse, "session") and warehouse.session:
-                try:
-                    if hasattr(warehouse.session, "close"):
-                        warehouse.session.close()
-                except Exception as e:
-                    logger.warning(f"Error closing warehouse session: {e}")
-
             # Remove from warehouses
             del self._warehouses[connection_name]
 

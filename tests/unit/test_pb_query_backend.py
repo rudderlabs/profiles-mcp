@@ -6,7 +6,10 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from tools.execution_backends import PbQueryExecutionBackend, SnowflakePbQueryStrategy
+from tools.execution_backends import (
+    PbQueryExecutionBackend,
+    SnowflakePbQueryStrategy,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -191,4 +194,100 @@ class TestHelperMethods:
 
         assert "DB.PUBLIC.EVENTS_TRACKS" in suggestions
         assert "DB.PUBLIC.EVENTS_PAGES" in suggestions
+        backend.cleanup()
+
+    def test_input_table_suggestions_handles_top_events_failure(self):
+        backend = _make_backend()
+
+        def fake_raw_query(query, response_type="list"):
+            if query.startswith("SHOW TABLES IN"):
+                return [{"name": "EVENTS_TRACKS"}, {"name": "EVENTS_PAGES"}]
+            if query.startswith("SELECT event"):
+                raise RuntimeError("top events query failed")
+            return []
+
+        with patch.object(backend, "raw_query", side_effect=fake_raw_query):
+            suggestions = backend.input_table_suggestions("DB", "PUBLIC")
+
+        # Should still return matches from default table matching even though
+        # the top-events query failed.
+        assert "DB.PUBLIC.EVENTS_TRACKS" in suggestions
+        assert "DB.PUBLIC.EVENTS_PAGES" in suggestions
+        backend.cleanup()
+
+    def test_input_table_suggestions_handles_list_tables_failure(self):
+        backend = _make_backend()
+
+        with patch.object(backend, "raw_query", side_effect=RuntimeError("connection lost")):
+            suggestions = backend.input_table_suggestions("DB", "PUBLIC")
+
+        assert suggestions == []
+        backend.cleanup()
+
+
+class TestBuildStrategy:
+    def test_raises_for_unsupported_warehouse_type(self):
+        backend = PbQueryExecutionBackend("unsupported_wh")
+        with pytest.raises(ValueError, match="Unsupported warehouse type"):
+            backend._build_strategy({})
+
+
+@pytest.mark.parametrize(
+    "warehouse_type",
+    ["snowflake", "bigquery", "databricks", "redshift"],
+)
+class TestInitializeConnectionAllWarehouses:
+    def test_initialize_connection_runs_full_flow(self, warehouse_type):
+        """Verify initialize_connection: stub project setup, pb run, SELECT 1 health check."""
+        version_result = subprocess.CompletedProcess(
+            args=["pb", "version"],
+            returncode=0,
+            stdout="Native schema version: 91\n",
+            stderr="",
+        )
+
+        stub_project_path = [None]
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["pb", "version"]:
+                return version_result
+            if cmd[:2] == ["pb", "run"]:
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            if cmd[:2] == ["pb", "query"]:
+                # Capture stub project path from the -p argument
+                p_idx = cmd.index("-p") + 1
+                stub_project_path[0] = cmd[p_idx]
+                csv_name = cmd[cmd.index("-f") + 1]
+                csv_path = os.path.join(cmd[p_idx], "output", csv_name)
+                os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+                with open(csv_path, "w") as handle:
+                    handle.write("result\n1\n")
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        connection_details = {
+            "type": warehouse_type,
+            "connection_name": f"{warehouse_type}_conn",
+        }
+        if warehouse_type == "databricks":
+            connection_details["catalog"] = "main"
+
+        with patch("tools.execution_backends.subprocess.run", side_effect=fake_run) as mock_run:
+            backend = PbQueryExecutionBackend(warehouse_type)
+            backend.initialize_connection(connection_details)
+
+        # Verify pb run was called (bootstrap)
+        run_calls = [c for c in mock_run.call_args_list if c.args[0][:2] == ["pb", "run"]]
+        assert len(run_calls) == 1
+
+        # Verify pb query was called (SELECT 1 health check)
+        query_calls = [c for c in mock_run.call_args_list if c.args[0][:2] == ["pb", "query"]]
+        assert len(query_calls) == 1
+
+        # Verify stub project was created with pb_project.yaml
+        assert stub_project_path[0] is not None
+        assert os.path.exists(os.path.join(stub_project_path[0], "pb_project.yaml"))
+
+        assert backend._pb_initialized is True
+        assert backend._strategy is not None
         backend.cleanup()

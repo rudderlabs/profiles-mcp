@@ -162,6 +162,23 @@ def assert_mcp_query_patterns_work(warehouse, use_pb_mode=False):
             assert len(query_result) == 1
 
 
+def assert_describe_result_valid(desc):
+    """Assert describe_table returned either valid column:type entries or a known error."""
+    assert isinstance(desc, list)
+    assert len(desc) >= 1
+    # Each entry should be either a "column: type" descriptor or a known
+    # graceful error message from the backend.  At least one entry should
+    # match one of these patterns.
+    known_error_prefixes = ("Failed to describe table:", "Table not found")
+    for entry in desc:
+        assert isinstance(entry, str)
+        is_column_descriptor = ": " in entry and not entry.startswith("Failed")
+        is_known_error = entry.startswith(known_error_prefixes)
+        assert is_column_descriptor or is_known_error, (
+            f"Unexpected describe_table entry: {entry!r}"
+        )
+
+
 @pytest.fixture
 def warehouse_manager():
     return WarehouseManager()
@@ -219,13 +236,8 @@ class TestSnowflakeIntegration:
             desc_schema = schema
             desc_db = db
 
-        try:
-            desc = wh.describe_table(desc_db, desc_schema, desc_table)
-            assert isinstance(desc, list)
-        except Exception:
-            # If information schema access is restricted, continue without failing
-            # The suggestions test already validated basic functionality
-            pass
+        desc = wh.describe_table(desc_db, desc_schema, desc_table)
+        assert_describe_result_valid(desc)
 
 
 @pytest.mark.skipif(
@@ -278,7 +290,7 @@ class TestSnowflakePbQueryIntegration:
             desc_db = db
 
         desc = wh.describe_table(desc_db, desc_schema, desc_table)
-        assert isinstance(desc, list)
+        assert_describe_result_valid(desc)
 
 
 # --- BigQuery Integration ---

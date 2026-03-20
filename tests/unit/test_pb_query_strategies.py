@@ -2,7 +2,25 @@ from tools.execution_backends import (
     BigQueryPbQueryStrategy,
     DatabricksPbQueryStrategy,
     RedshiftPbQueryStrategy,
+    SnowflakePbQueryStrategy,
 )
+
+
+def test_snowflake_relation_name():
+    strategy = SnowflakePbQueryStrategy()
+    assert strategy.relation_name("DB", "SCHEMA", "TABLE") == "DB.SCHEMA.TABLE"
+
+
+def test_snowflake_helper_queries():
+    strategy = SnowflakePbQueryStrategy()
+
+    assert strategy.describe_table_query("DB", "SCH", "TBL") == "DESCRIBE TABLE DB.SCH.TBL"
+    assert strategy.list_tables_query("DB", "SCH") == "SHOW TABLES IN DB.SCH"
+
+    top_q = strategy.top_events_query("DB", "SCH", "tracks")
+    assert "FROM DB.SCH.tracks" in top_q
+    assert "group by event" in top_q
+    assert "limit 20" in top_q
 
 
 def test_bigquery_relation_qualification_rules():
@@ -39,8 +57,11 @@ def test_databricks_unity_catalog_relation_names():
     assert non_uc_strategy.relation_name("analytics", "analytics", "tracks") == "analytics.tracks"
 
 
-def test_redshift_describe_uses_describe_table_statement():
+def test_redshift_describe_uses_information_schema():
     strategy = RedshiftPbQueryStrategy()
 
     q = strategy.describe_table_query("dev", "public", "tracks")
-    assert q == "DESCRIBE TABLE dev.public.tracks"
+    assert "information_schema.columns" in q
+    assert "table_schema = 'public'" in q
+    assert "table_name = 'tracks'" in q
+    assert "ordinal_position" in q
