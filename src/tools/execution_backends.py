@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from typing import Any, Dict, List, Union
 from uuid import uuid4
 
@@ -380,24 +381,56 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
         if self._siteconfig_path and self._siteconfig_path != self._default_siteconfig_path():
             cmd.extend(["-c", self._siteconfig_path])
 
+        timeout_seconds = self._run_timeout_seconds()
+        start_time = time.monotonic()
+        logger.info(
+            "Starting pb run initialization",
+            extra={
+                "warehouse_type": self._warehouse_type,
+                "connection_name": self._connection_name,
+                "timeout_seconds": timeout_seconds,
+            },
+        )
+
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=self._run_timeout_seconds(),
+                timeout=timeout_seconds,
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
                 "pb CLI is not available. Please install profiles-rudderstack and ensure pb is on PATH."
             ) from exc
         except subprocess.TimeoutExpired as exc:
+            elapsed_seconds = round(time.monotonic() - start_time, 3)
+            logger.warning(
+                "pb run initialization timed out",
+                extra={
+                    "warehouse_type": self._warehouse_type,
+                    "connection_name": self._connection_name,
+                    "elapsed_seconds": elapsed_seconds,
+                    "timeout_seconds": timeout_seconds,
+                },
+            )
             stderr_text = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
             concise = self._concise_error(
                 stderr_text,
                 "pb run initialization timed out.",
             )
             raise RuntimeError(concise) from exc
+
+        elapsed_seconds = round(time.monotonic() - start_time, 3)
+        logger.info(
+            "Finished pb run initialization",
+            extra={
+                "warehouse_type": self._warehouse_type,
+                "connection_name": self._connection_name,
+                "returncode": result.returncode,
+                "elapsed_seconds": elapsed_seconds,
+            },
+        )
 
         if result.returncode != 0:
             stderr_clean = self.ANSI_ESCAPE.sub("", result.stderr or "")
@@ -486,8 +519,21 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
         if self._siteconfig_path and self._siteconfig_path != self._default_siteconfig_path():
             cmd.extend(["-c", self._siteconfig_path])
 
+        timeout_seconds = self._query_timeout_seconds()
+        query_preview = " ".join(query.split())[:160]
+        start_time = time.monotonic()
+        logger.info(
+            "Starting pb query",
+            extra={
+                "warehouse_type": self._warehouse_type,
+                "connection_name": self._connection_name,
+                "response_type": response_type,
+                "timeout_seconds": timeout_seconds,
+                "query_preview": query_preview,
+            },
+        )
+
         try:
-            timeout_seconds = self._query_timeout_seconds()
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -499,6 +545,18 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
                 "pb CLI is not available. Please install profiles-rudderstack and ensure pb is on PATH."
             ) from exc
         except subprocess.TimeoutExpired as exc:
+            elapsed_seconds = round(time.monotonic() - start_time, 3)
+            logger.warning(
+                "pb query timed out",
+                extra={
+                    "warehouse_type": self._warehouse_type,
+                    "connection_name": self._connection_name,
+                    "response_type": response_type,
+                    "elapsed_seconds": elapsed_seconds,
+                    "timeout_seconds": timeout_seconds,
+                    "query_preview": query_preview,
+                },
+            )
             logger.debug(f"pb query timeout. sql={query}")
             timeout_detail = ""
             stderr_text = exc.stderr.decode("utf-8", errors="ignore") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
@@ -509,6 +567,19 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
             raise RuntimeError(
                 f"Query execution timed out in pb query. Try reducing query scope or disabling migrations.{timeout_detail}"
             ) from exc
+
+        elapsed_seconds = round(time.monotonic() - start_time, 3)
+        logger.info(
+            "Finished pb query",
+            extra={
+                "warehouse_type": self._warehouse_type,
+                "connection_name": self._connection_name,
+                "response_type": response_type,
+                "returncode": result.returncode,
+                "elapsed_seconds": elapsed_seconds,
+                "query_preview": query_preview,
+            },
+        )
 
         if result.returncode != 0:
             stderr_clean = self.ANSI_ESCAPE.sub("", result.stderr or "")

@@ -21,8 +21,17 @@ def is_ci_environment():
     return os.environ.get("CI", "").lower() in {"1", "true", "yes"}
 
 
+def is_local_skip_enabled():
+    # Keep CI strict and allow local lenient skipping only when explicitly requested.
+    return os.environ.get("ALLOW_LOCAL_INTEGRATION_SKIP", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
 def should_lenient_skip_local_external_errors():
-    return not is_ci_environment()
+    return (not is_ci_environment()) and is_local_skip_enabled()
 
 
 def is_local_pb_override_mode():
