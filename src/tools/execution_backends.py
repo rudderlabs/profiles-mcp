@@ -372,6 +372,14 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
             timeout = 540
         return max(timeout, 1)
 
+    def _slow_log_threshold_seconds(self) -> int:
+        raw_value = os.environ.get("PB_SLOW_LOG_THRESHOLD_SECONDS", "30")
+        try:
+            threshold = int(raw_value)
+        except (TypeError, ValueError):
+            threshold = 30
+        return max(threshold, 1)
+
     def _run_pb_initialization(self) -> None:
         if self._pb_initialized:
             return
@@ -431,6 +439,15 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
                 "elapsed_seconds": elapsed_seconds,
             },
         )
+        if elapsed_seconds >= self._slow_log_threshold_seconds():
+            logger.warning(
+                "Slow pb run initialization detected",
+                extra={
+                    "warehouse_type": self._warehouse_type,
+                    "connection_name": self._connection_name,
+                    "elapsed_seconds": elapsed_seconds,
+                },
+            )
 
         if result.returncode != 0:
             stderr_clean = self.ANSI_ESCAPE.sub("", result.stderr or "")
@@ -580,6 +597,17 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
                 "query_preview": query_preview,
             },
         )
+        if elapsed_seconds >= self._slow_log_threshold_seconds():
+            logger.warning(
+                "Slow pb query detected",
+                extra={
+                    "warehouse_type": self._warehouse_type,
+                    "connection_name": self._connection_name,
+                    "response_type": response_type,
+                    "elapsed_seconds": elapsed_seconds,
+                    "query_preview": query_preview,
+                },
+            )
 
         if result.returncode != 0:
             stderr_clean = self.ANSI_ESCAPE.sub("", result.stderr or "")
