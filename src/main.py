@@ -81,6 +81,48 @@ def get_app_context(ctx: Context) -> AppContext:
     return ctx.request_context.lifespan_context
 
 
+def get_or_initialize_warehouse(ctx: Context):
+    app_ctx = get_app_context(ctx)
+    warehouse_manager = app_ctx.warehouse_manager
+    warehouse = warehouse_manager.get_active_warehouse()
+    if warehouse:
+        return warehouse
+
+    # Auto-bootstrap only when there is a single unambiguous configured connection.
+    connections = app_ctx.profiles.get_existing_connections()
+    if not isinstance(connections, list):
+        raise Exception(
+            "No warehouse connection initialized and unable to read available connections. "
+            f"Details: {connections}"
+        )
+
+    if len(connections) == 0:
+        raise Exception(
+            "No warehouse connection initialized and no configured connections were found. "
+            "Please create one using pb init connection."
+        )
+
+    if len(connections) > 1:
+        raise Exception(
+            "No warehouse connection initialized. Multiple connections are configured "
+            f"({', '.join(connections)}). Call initialize_warehouse_connection with the desired one."
+        )
+
+    connection_name = connections[0]
+    connection_details = app_ctx.profiles.fetch_warehouse_credentials(connection_name)
+    if connection_details.get("status") == "error":
+        raise Exception(
+            f"No warehouse connection initialized and auto-initialization failed for '{connection_name}': "
+            f"{connection_details.get('message', 'unknown error')}"
+        )
+
+    warehouse = warehouse_manager.initialize_warehouse(
+        connection_name, connection_details["connection_details"]
+    )
+    logger.info(f"Auto-initialized warehouse connection: {connection_name}")
+    return warehouse
+
+
 def track(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -380,11 +422,7 @@ def run_query(ctx: Context, query: str) -> dict:
     Example:
         result = run_query("SELECT * FROM my_table LIMIT 10")
     """
-    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
-    if not warehouse:
-        raise Exception(
-            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
-        )
+    warehouse = get_or_initialize_warehouse(ctx)
 
     if query.lower().strip().startswith("select"):
         result = warehouse.raw_query(query, response_type="pandas")
@@ -446,11 +484,7 @@ def input_table_suggestions(ctx: Context, database: str, schemas: str) -> list[s
         Returns:
             ['my_database.my_schema1.my_table1', 'my_database.my_schema2.my_table2']
     """
-    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
-    if not warehouse:
-        raise Exception(
-            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
-        )
+    warehouse = get_or_initialize_warehouse(ctx)
 
     return warehouse.input_table_suggestions(database, schemas)
 
@@ -486,11 +520,7 @@ def describe_table(ctx: Context, database: str, schema: str, table: str) -> list
     Returns:
         list[str]: A list of strings describing the table structure (e.g., column name, data type, nullable, etc.).
     """
-    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
-    if not warehouse:
-        raise Exception(
-            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
-        )
+    warehouse = get_or_initialize_warehouse(ctx)
 
     return warehouse.describe_table(database, schema, table)
 
@@ -664,11 +694,7 @@ def evaluate_eligible_user_filters(
                          'positive_rate', and 'recall'. If no best filter is found,
                          it returns {"recall": -1.0} for metrics.
     """
-    warehouse = get_app_context(ctx).warehouse_manager.get_active_warehouse()
-    if not warehouse:
-        raise Exception(
-            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
-        )
+    warehouse = get_or_initialize_warehouse(ctx)
 
     return warehouse.eligible_user_evaluator(
         filter_sqls=filter_sqls,
@@ -812,11 +838,7 @@ def validate_propensity_model_config(
             print("Validation passed!")
     """
     app_ctx = get_app_context(ctx)
-    warehouse = app_ctx.warehouse_manager.get_active_warehouse()
-    if not warehouse:
-        raise Exception(
-            "No warehouse connection initialized. Call initialize_warehouse_connection() first."
-        )
+    warehouse = get_or_initialize_warehouse(ctx)
 
     return app_ctx.profiles.validate_propensity_model_config(
         project_path=project_path, model_name=model_name, warehouse_client=warehouse

@@ -185,6 +185,33 @@ class TestInitialization:
         assert backend._pb_initialized is True
         backend.cleanup()
 
+    def test_pb_commands_use_stub_project_as_cwd(self):
+        backend = PbQueryExecutionBackend("snowflake")
+        backend._strategy = SnowflakePbQueryStrategy()
+        backend._connection_name = "snowflake_conn"
+        backend._siteconfig_path = backend._default_siteconfig_path()
+        backend._stub_project_path = tempfile.mkdtemp(prefix="pb_mcp_test_")
+        os.makedirs(os.path.join(backend._stub_project_path, "output"), exist_ok=True)
+        backend._session = True
+
+        def fake_run(cmd, **kwargs):
+            if cmd[:2] == ["pb", "run"]:
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            csv_name = cmd[cmd.index("-f") + 1]
+            csv_path = os.path.join(backend._stub_project_path, "output", csv_name)
+            with open(csv_path, "w") as handle:
+                handle.write("COL_A\n1\n")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        with patch("tools.execution_backends.subprocess.run", side_effect=fake_run) as mock_run:
+            backend.raw_query("SELECT 1")
+
+        pb_calls = [c for c in mock_run.call_args_list if c.args[0][0] == "pb"]
+        assert pb_calls
+        assert all(c.kwargs.get("cwd") == backend._stub_project_path for c in pb_calls)
+        backend.cleanup()
+
 
 class TestHelperMethods:
     def test_describe_table_returns_fallback_on_empty_rows(self):

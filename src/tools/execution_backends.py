@@ -415,6 +415,7 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
+                cwd=self._stub_project_path,
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
@@ -565,6 +566,7 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
                 capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
+                cwd=self._stub_project_path,
             )
         except FileNotFoundError as exc:
             raise RuntimeError(
