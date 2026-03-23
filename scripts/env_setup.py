@@ -28,6 +28,13 @@ ENV_GROUPS = OrderedDict(
                     "help": "Set to 'true' if running in kubernetes pod environment (skips virtual environment creation)",
                     "default": "false",
                 },
+                {
+                    "name": "USE_PB_QUERY",
+                    "required": False,
+                    "secret": False,
+                    "help": "Set to 'true' to execute warehouse queries via pb CLI (default is SDK mode)",
+                    "default": "false",
+                },
             ],
         ),
     ]

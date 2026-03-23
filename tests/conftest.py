@@ -15,7 +15,7 @@ def warehouse_config_setup():
     If found, writes them to a temporary siteconfig.yaml file.
     Returns the path to the temporary config file.
     """
-    # Map of expected env vars to their config keys
+    # Map of expected CI env vars to synthetic config keys used in integration tests.
     env_vars_map = {
         "SNOWFLAKE_CONFIG": "snowflake_conn",
         "BIGQUERY_CONFIG": "bigquery_conn",
@@ -23,12 +23,75 @@ def warehouse_config_setup():
         "REDSHIFT_CONFIG": "redshift_conn",
     }
 
+    # Optional local overrides: map real siteconfig connection names to synthetic keys.
+    # Example:
+    #   PB_TEST_SNOWFLAKE_CONN=test
+    # will map ~/.pb/siteconfig.yaml connections.test to snowflake_conn for tests.
+    local_override_map = {
+        "PB_TEST_SNOWFLAKE_CONN": "snowflake_conn",
+        "PB_TEST_BIGQUERY_CONN": "bigquery_conn",
+        "PB_TEST_DATABRICKS_CONN": "databricks_conn",
+        "PB_TEST_REDSHIFT_CONN": "redshift_conn",
+    }
+
     connections = {}
     found_secrets = False
 
+    # 1) Local override path: copy explicitly selected real connections from siteconfig.
+    selected_local_connections = {
+        env_var: os.environ.get(env_var)
+        for env_var in local_override_map
+        if os.environ.get(env_var)
+    }
+    if selected_local_connections:
+        siteconfig_path = Path(
+            os.environ.get("PB_TEST_SITECONFIG_PATH", str(Path.home() / ".pb" / "siteconfig.yaml"))
+        )
+
+        if not siteconfig_path.exists():
+            warnings.warn(
+                f"PB test siteconfig not found at {siteconfig_path}. "
+                "Set PB_TEST_SITECONFIG_PATH or remove PB_TEST_*_CONN overrides."
+            )
+        else:
+            try:
+                with open(siteconfig_path, "r") as file:
+                    local_config = yaml.safe_load(file) or {}
+                local_connections = local_config.get("connections", {})
+
+                for env_var, selected_conn_name in selected_local_connections.items():
+                    synthetic_name = local_override_map[env_var]
+                    existing_conn = local_connections.get(selected_conn_name)
+                    if not existing_conn:
+                        available = sorted(local_connections.keys())
+                        warnings.warn(
+                            f"{env_var}='{selected_conn_name}' not found in {siteconfig_path}. "
+                            f"Available connections: {available}"
+                        )
+                        continue
+
+                    target = existing_conn.get("target", "dev")
+                    outputs = existing_conn.get("outputs", {})
+                    if target not in outputs:
+                        warnings.warn(
+                            f"Connection '{selected_conn_name}' target '{target}' missing in outputs. "
+                            f"Skipping mapping for {synthetic_name}."
+                        )
+                        continue
+
+                    connections[synthetic_name] = {
+                        "target": target,
+                        "outputs": {target: outputs[target]},
+                    }
+                    found_secrets = True
+            except yaml.YAMLError as e:
+                warnings.warn(f"Failed to parse local PB siteconfig: {e}")
+
+    # 2) CI/default path: build synthetic connections from *_CONFIG secrets.
     for env_var, conn_name in env_vars_map.items():
         config_str = os.environ.get(env_var)
-        if config_str:
+        # Explicit local override should take precedence for that synthetic key.
+        if config_str and conn_name not in connections:
             found_secrets = True
             try:
                 # Parse the YAML string from secret
@@ -94,6 +157,7 @@ def patch_site_config(warehouse_config_setup):
         with (
             patch("constants.PB_SITE_CONFIG_PATH", warehouse_config_setup),
             patch("tools.profiles.PB_SITE_CONFIG_PATH", warehouse_config_setup),
+            patch("tools.warehouse_factory.PB_SITE_CONFIG_PATH", warehouse_config_setup),
         ):
             yield
     else:

@@ -54,6 +54,8 @@ def test_validate_identifier_valid():
         "valid_name_123",
         "ValidName",
         "$valid_snowflake",
+        "profiles-builder",  # BigQuery project IDs contain hyphens
+        "my-project.dataset.table-name",  # fully qualified with hyphens
     ]
 
     for ident in valid_identifiers:
@@ -63,10 +65,11 @@ def test_validate_identifier_valid():
 
 def test_validate_identifier_invalid():
     invalid_identifiers = [
-        "invalid-name",  # hyphen not allowed
         "invalid name",  # space not allowed
         "invalid;drop",  # semi-colon
         "invalid/name",
+        "invalid'name",  # single quote
+        'invalid"name',  # double quote
         "",  # empty
         None,
     ]
