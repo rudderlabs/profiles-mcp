@@ -14,7 +14,7 @@ The Profiles MCP Server enables you to build RudderStack Profiles projects using
   - **Redshift**: Cluster or Serverless access with read/write permissions
 - **RudderStack Personal Access Token**: Generate one from your [RudderStack dashboard](https://www.rudderstack.com/docs/dashboard-guides/personal-access-token/#generate-personal-access-token)
 - **AI Client with MCP Support**: See [AI Client Support](#ai-client-support) section below
-- **Pb Version Recommendation**: It is recommended to have pb (profiles-rudderstack) version `v0.24.0` or above installed if you want to build propensity models.
+- **Pb CLI**: `pb` (from `profiles-rudderstack`) is installed as part of setup and used by default for warehouse query execution.
 
 ### Authentication Requirements
 
@@ -73,6 +73,7 @@ For other AI clients or if automatic integration fails:
    - Install `uv` if not found
    - Create `.env` file if missing
    - Install all dependencies
+   - Verify/install `pb` CLI (`profiles-rudderstack`) required for default pb-query execution
    - Download and extract embeddings to `src/data/`
    - Automatically configure MCP integration for supported AI clients (Cursor, Claude Code, Cline)
 

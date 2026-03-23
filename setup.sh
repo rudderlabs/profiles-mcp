@@ -125,6 +125,22 @@ if ! uv sync; then
 fi
 print_status "Python dependencies installed successfully"
 
+# Ensure pb CLI is available since pb-query is the default execution path.
+print_status "Verifying pb CLI availability..."
+if ! uv run pb version > /dev/null 2>&1; then
+    print_warning "pb CLI not found after dependency sync. Installing profiles-rudderstack..."
+    if ! uv pip install "profiles-rudderstack>=0.24.0"; then
+        print_error "Failed to install profiles-rudderstack (pb CLI)"
+        exit 1
+    fi
+fi
+
+if ! uv run pb version > /dev/null 2>&1; then
+    print_error "pb CLI is still unavailable after installation"
+    exit 1
+fi
+print_status "pb CLI is available"
+
 
 # Update MCP configuration using Python script
 print_status "Updating MCP configuration..."
