@@ -138,6 +138,23 @@ class TestRawQuery:
         assert pd.isna(rows[0]["COL_B"])
         backend.cleanup()
 
+    def test_empty_csv_returns_empty_rows_in_list_mode(self):
+        backend = _make_backend()
+
+        def fake_run(cmd, **kwargs):
+            csv_name = cmd[cmd.index("-f") + 1]
+            csv_path = os.path.join(backend._stub_project_path, "output", csv_name)
+            # Write an empty file to emulate no tabular result payload.
+            with open(csv_path, "w") as handle:
+                handle.write("")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        with patch("tools.execution_backends.subprocess.run", side_effect=fake_run):
+            rows = backend.raw_query("SELECT * FROM T", response_type="list")
+
+        assert rows == []
+        backend.cleanup()
+
 
 class TestInitialization:
     def test_runs_pb_run_before_first_query(self):

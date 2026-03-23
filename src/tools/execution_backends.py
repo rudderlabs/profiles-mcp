@@ -641,7 +641,21 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
             )
 
         try:
-            df = pd.read_csv(csv_path, na_values=["<nil>"])
+            try:
+                df = pd.read_csv(csv_path, na_values=["<nil>"])
+            except pd.errors.EmptyDataError:
+                # Some warehouses/queries can yield an empty output file.
+                # Treat this as a valid empty result instead of raising.
+                logger.warning(
+                    "pb query returned empty tabular output",
+                    extra={
+                        "warehouse_type": self._warehouse_type,
+                        "connection_name": self._connection_name,
+                        "response_type": response_type,
+                        "query_preview": query_preview,
+                    },
+                )
+                df = pd.DataFrame()
         finally:
             try:
                 if os.path.exists(csv_path):

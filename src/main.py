@@ -31,6 +31,7 @@ class AppContext:
 
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
+    app_context = None
     try:
         logger.info("Initializing app context")
         app_context = AppContext(
@@ -40,10 +41,13 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
             profiles=ProfilesTools(),
         )
         yield app_context
+    except Exception:
+        logger.exception("Failed to initialize app context")
+        raise
     finally:
         # Clean up warehouse connections
         logger.info("Starting application cleanup...")
-        if hasattr(app_context, "warehouse_manager"):
+        if app_context and hasattr(app_context, "warehouse_manager"):
             logger.info("Closing all warehouse connections...")
             app_context.warehouse_manager.close_all_warehouses()
             logger.info("Application cleanup completed successfully")
@@ -383,11 +387,28 @@ def run_query(ctx: Context, query: str) -> dict:
         )
 
     if query.lower().strip().startswith("select"):
-        df = warehouse.raw_query(query, response_type="pandas")
+        result = warehouse.raw_query(query, response_type="pandas")
+
+        # Some backends may return list fallback or empty tabular results.
+        if isinstance(result, pd.DataFrame):
+            return {
+                "data": result.to_dict(orient="records"),
+                "row_count": len(result),
+                "columns": result.columns.tolist(),
+            }
+
+        if isinstance(result, list):
+            columns = list(result[0].keys()) if result else []
+            return {
+                "data": result,
+                "row_count": len(result),
+                "columns": columns,
+            }
+
         return {
-            "data": df.to_dict(orient="records"),
-            "row_count": len(df),
-            "columns": df.columns.tolist(),
+            "data": [],
+            "row_count": 0,
+            "columns": [],
         }
     else:
         result = warehouse.raw_query(query, response_type="list")
