@@ -151,7 +151,8 @@ class Snowflake(BaseWarehouse):
                     return df
                 except Exception as e:
                     logger.error(f"Failed to convert query to pandas: {str(e)}")
-                    return result
+                    # Fall back to the list response type for parity with other warehouses.
+                    return self.raw_query(query, response_type="list")
             else:
                 raise Exception(f"Invalid response type: {response_type}")
         except Exception as e:

@@ -44,8 +44,9 @@ class BaseWarehouse(ABC):
         """
         Validate SQL identifier to prevent SQL injection across all supported warehouses.
 
-        This validation works for Snowflake, Redshift, and Databricks identifiers.
-        Allows: alphanumeric, underscore, dot (for qualified names), and dollar sign.
+        This validation works for Snowflake, Redshift, Databricks, and BigQuery
+        identifiers. Allows characters that are safe across warehouse dialects
+        while blocking SQL injection vectors (quotes, semicolons, comments, etc.).
 
         Note: This validation is used for identifiers that may be used in f-string
         SQL queries. For parameterized queries, the database driver handles escaping.
@@ -56,6 +57,7 @@ class BaseWarehouse(ABC):
         - Underscore: _ (all warehouses)
         - Dot: . (for qualified names like database.schema.table)
         - Dollar sign: $ (Snowflake and Redshift)
+        - Hyphen: - (BigQuery project IDs and table names)
 
         Args:
             identifier: The identifier to validate (table name, schema name, etc.)
@@ -67,12 +69,14 @@ class BaseWarehouse(ABC):
         if not identifier or not isinstance(identifier, str):
             raise ValueError(f"Invalid {identifier_type}: must be a non-empty string")
 
-        # Allow alphanumeric, underscore, dot, and dollar sign
-        # This pattern works across Snowflake, Redshift, and Databricks
-        if not re.match(r"^[a-zA-Z0-9_.$]+$", identifier):
+        # Allow alphanumeric, underscore, dot, dollar sign, and hyphen.
+        # Hyphen is safe: SQL comments require `--` followed by whitespace or
+        # end-of-line, and the full-string anchor ensures no such context exists.
+        if not re.match(r"^[a-zA-Z0-9_.$-]+$", identifier):
             raise ValueError(
                 f"Invalid {identifier_type} '{identifier}': contains unsafe characters. "
-                f"Only alphanumeric characters, underscores, dots, and dollar signs are allowed."
+                f"Only alphanumeric characters, underscores, dots, dollar signs, "
+                f"and hyphens are allowed."
             )
 
     @abstractmethod

@@ -5,6 +5,19 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      warehouse:
+        description: "Single warehouse to run pb-mode integration tests for (leave empty for all)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - snowflake
+          - bigquery
+          - databricks
+          - redshift
 
 jobs:
   unit-tests:
@@ -30,8 +43,8 @@ jobs:
           export PYTHONPATH=$PYTHONPATH:$(pwd)/src
           uv run pytest
 
-  integration-tests:
-    name: Integration Tests (${{ matrix.warehouse }})
+  integration-sdk-tests:
+    name: Integration SDK Tests (${{ matrix.warehouse }})
     needs: unit-tests
     runs-on: ubuntu-latest
     strategy:
@@ -54,14 +67,53 @@ jobs:
           # Install helper libs if needed
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run Integration Tests
+      - name: Run SDK Integration Tests
         env:
           SNOWFLAKE_CONFIG: ${{ secrets.SNOWFLAKE_CONFIG }}
           BIGQUERY_CONFIG: ${{ secrets.BIGQUERY_CONFIG }}
           DATABRICKS_CONFIG: ${{ secrets.DATABRICKS_CONFIG }}
           REDSHIFT_CONFIG: ${{ secrets.REDSHIFT_CONFIG }}
+          USE_PB_QUERY: "false"
           PYTHONPATH: ${{ github.workspace }}/src
         run: |
-          # The -k flag filters tests matching the warehouse name (case insensitive usually works with pytest -k patterns)
-          # We use "snowflake", "bigquery" etc which match "TestSnowflakeIntegration" etc.
-          pytest tests/integration/test_warehouses_real.py -k ${{ matrix.warehouse }}
+          # Run only SDK integration classes for this warehouse.
+          pytest tests/integration/test_warehouses_real.py -k "${{ matrix.warehouse }} and not PbQuery"
+
+  integration-pb-tests:
+    name: Integration PB Tests (${{ matrix.warehouse }})
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        warehouse: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.warehouse != '' && fromJson(format('["{0}"]', github.event.inputs.warehouse)) || fromJson('["snowflake","bigquery","databricks","redshift"]') }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-mock pandas snowflake-snowpark-python google-cloud-bigquery databricks-sql-connector redshift_connector boto3 pyyaml cryptography python-dotenv
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Install pb CLI
+        run: |
+          pip install profiles-rudderstack==0.24.8
+
+      - name: Run PB Integration Tests
+        env:
+          SNOWFLAKE_CONFIG: ${{ secrets.SNOWFLAKE_CONFIG }}
+          BIGQUERY_CONFIG: ${{ secrets.BIGQUERY_CONFIG }}
+          DATABRICKS_CONFIG: ${{ secrets.DATABRICKS_CONFIG }}
+          REDSHIFT_CONFIG: ${{ secrets.REDSHIFT_CONFIG }}
+          USE_PB_QUERY: "true"
+          PYTHONPATH: ${{ github.workspace }}/src
+        run: |
+          # Run only pb integration classes for this warehouse.
+          pytest tests/integration/test_warehouses_real.py -k "${{ matrix.warehouse }} and PbQuery"
