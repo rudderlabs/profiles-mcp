@@ -4,14 +4,16 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       warehouse:
-        description: Warehouse to debug in pb mode
-        required: true
-        default: snowflake
+        description: "Single warehouse to run pb-mode integration tests for (leave empty for all)"
+        required: false
+        default: ""
         type: choice
         options:
+          - ""
           - snowflake
           - bigquery
           - databricks
@@ -84,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        warehouse: [snowflake, bigquery, databricks, redshift]
+        warehouse: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.warehouse != '' && fromJson(format('["{0}"]', github.event.inputs.warehouse)) || fromJson('["snowflake","bigquery","databricks","redshift"]') }}
 
     steps:
       - uses: actions/checkout@v3

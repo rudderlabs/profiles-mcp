@@ -109,7 +109,12 @@ class SdkExecutionBackend(WarehouseExecutionBackend):
 
 
 class PbQueryStrategy(ABC):
-    """Warehouse-specific SQL semantics for pb-query backend helpers."""
+    """Warehouse-specific SQL semantics for pb-query backend helpers.
+
+    Callers must validate all identifier arguments (database, schema, table)
+    via BaseWarehouse._validate_identifier before passing them to query-building
+    methods, as strategies embed these values directly into SQL strings.
+    """
 
     @abstractmethod
     def warehouse_type(self) -> str:
@@ -303,6 +308,10 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
     """Backend that executes SQL through `pb query` CLI."""
 
     ANSI_ESCAPE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+    # Class-level cache: populated once per process from `pb version`.
+    # Not invalidated automatically — if pb CLI is upgraded while the
+    # MCP server is running, restart the server to pick up the new version.
     _schema_version_cache: int = None
 
     @staticmethod
