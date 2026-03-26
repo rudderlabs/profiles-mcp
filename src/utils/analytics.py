@@ -13,6 +13,7 @@ class Analytics:
     def __init__(self):
         rudder_analytics.write_key = ANALYTICS_WRITE_KEY
         rudder_analytics.dataPlaneUrl = ANALYTICS_DATA_PLANE_URL
+        self.user_id: Optional[str] = None
         self._set_anonymous_id()
         self._set_context()
 
@@ -55,15 +56,17 @@ class Analytics:
 
     def track(self, event: str, properties: Optional[dict] = None):
         if properties is None:
-                properties = {}
+            properties = {}
         try:
-            rudder_analytics.track(
-                anonymous_id=self.anonymous_id,
-                user_id=self.user_id,
-                context=self.context,
-                event=event,
-                properties=properties,
-            )
+            payload = {
+                "anonymous_id": self.anonymous_id,
+                "context": self.context,
+                "event": event,
+                "properties": properties,
+            }
+            if self.user_id:
+                payload["user_id"] = self.user_id
+            rudder_analytics.track(**payload)
         except Exception as e:
             logger.warning(f"Error tracking event: {event} with properties: {properties} - {e}")
             pass
