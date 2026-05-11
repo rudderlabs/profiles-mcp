@@ -132,6 +132,7 @@ jobs:
           REDSHIFT_CONFIG: ${{ secrets.REDSHIFT_CONFIG }}
           USE_PB_QUERY: "true"
           PYTHONPATH: ${{ github.workspace }}/src
+          MATRIX_WAREHOUSE: ${{ matrix.warehouse }}
         run: |
           # Run only pb integration classes for this warehouse.
-          pytest tests/integration/test_warehouses_real.py -k "${{ matrix.warehouse }} and PbQuery"
+          pytest tests/integration/test_warehouses_real.py -k "$MATRIX_WAREHOUSE and PbQuery"
