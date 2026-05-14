@@ -12,6 +12,7 @@ from uuid import uuid4
 import pandas as pd
 import yaml
 
+from constants import USE_FIX_PATH_FOR_STUB_PROJECT
 from logger import setup_logger
 from tools.warehouse_base import BaseWarehouse, WarehouseConnectionDetails
 
@@ -469,8 +470,13 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
 
         self._pb_initialized = True
 
+    FIXED_STUB_PROJECT_PATH = "/tmp/pb_mcp_stub_project"
+
     def _setup_stub_project(self) -> None:
-        self._stub_project_path = tempfile.mkdtemp(prefix="pb_mcp_")
+        if USE_FIX_PATH_FOR_STUB_PROJECT:
+            self._stub_project_path = self.FIXED_STUB_PROJECT_PATH
+        else:
+            self._stub_project_path = tempfile.mkdtemp(prefix="pb_mcp_")
         os.makedirs(os.path.join(self._stub_project_path, "models"), exist_ok=True)
         os.makedirs(os.path.join(self._stub_project_path, "output"), exist_ok=True)
 
@@ -771,7 +777,11 @@ class PbQueryExecutionBackend(WarehouseExecutionBackend):
         return list(set(suggestions))
 
     def cleanup(self) -> None:
-        if self._stub_project_path and os.path.exists(self._stub_project_path):
+        if (
+            not USE_FIX_PATH_FOR_STUB_PROJECT
+            and self._stub_project_path
+            and os.path.exists(self._stub_project_path)
+        ):
             try:
                 shutil.rmtree(self._stub_project_path)
             except OSError as exc:

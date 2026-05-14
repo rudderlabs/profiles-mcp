@@ -35,6 +35,13 @@ ENV_GROUPS = OrderedDict(
                     "help": "Set to 'true' to execute warehouse queries via pb CLI (default is SDK mode)",
                     "default": "false",
                 },
+                {
+                    "name": "USE_FIX_PATH_FOR_STUB_PROJECT",
+                    "required": False,
+                    "secret": False,
+                    "help": "Set to 'true' to reuse a fixed stub project dir at /tmp/pb_mcp_stub_project across runs (default is per-run temp dir)",
+                    "default": "false",
+                },
             ],
         ),
     ]
